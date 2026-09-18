@@ -4,26 +4,35 @@ export class MenuScene extends Phaser.Scene {
   constructor() { super('Menu'); }
 
   create(): void {
-    this.cameras.main.setBackgroundColor('#0f0f23');
+    this.cameras.main.setBackgroundColor('#171c18');
+    const ink = this.add.graphics();
+    ink.fillStyle(0xd8d1bd, 1).fillRect(0, 0, 1024, 768);
+    ink.fillStyle(0x27312a, 0.82);
+    ink.fillTriangle(0, 620, 260, 180, 530, 620);
+    ink.fillStyle(0x4a554b, 0.55);
+    ink.fillTriangle(310, 620, 620, 240, 870, 620);
+    ink.fillStyle(0x202820, 0.9).fillRect(0, 620, 1024, 148);
+    this.add.circle(826, 128, 52, 0xb34e3d, 0.86);
+    this.add.text(826, 128, '造', { fontFamily: 'serif', fontSize: '40px', color: '#f2e7d3' }).setOrigin(0.5);
 
-    this.add.text(512, 200, '汉字世界', {
-      fontSize: '64px', color: '#e6e6e6', fontFamily: 'serif'
+    this.add.text(512, 198, '汉 字 世 界', {
+      fontSize: '68px', color: '#242b25', fontFamily: 'serif'
     }).setOrigin(0.5);
 
-    this.add.text(512, 280, '异世界入侵', {
-      fontSize: '24px', color: '#aaaaaa'
+    this.add.text(512, 285, '异界侵墨 · 以字为兵', {
+      fontSize: '22px', color: '#5b6057'
     }).setOrigin(0.5);
 
-    const startBtn = this.add.text(512, 450, '[ 开始游戏 ]', {
-      fontSize: '32px', color: '#4fc3f7', fontFamily: 'monospace'
+    const startBtn = this.add.text(512, 452, '进入归字营', {
+      fontSize: '24px', color: '#f2ead8', backgroundColor: '#4c382b', padding: { x: 34, y: 14 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    startBtn.on('pointerover', () => startBtn.setColor('#81d4fa'));
-    startBtn.on('pointerout', () => startBtn.setColor('#4fc3f7'));
-    startBtn.on('pointerdown', () => this.scene.start('Game'));
+    startBtn.on('pointerover', () => startBtn.setBackgroundColor('#684d35'));
+    startBtn.on('pointerout', () => startBtn.setBackgroundColor('#4c382b'));
+    startBtn.on('pointerdown', () => this.scene.start('Base'));
 
-    this.add.text(512, 600, 'WASD移动 | 鼠标左键攻击 | 空格翻滚', {
-      fontSize: '16px', color: '#666666'
+    this.add.text(512, 674, 'WASD 移动 · 左键挥刀 · Q / 右键施放 · 空格闪避', {
+      fontSize: '15px', color: '#b9c1b8'
     }).setOrigin(0.5);
   }
 }
