@@ -1,14 +1,13 @@
 import Phaser from 'phaser';
 
 export class BootScene extends Phaser.Scene {
-  constructor() {
-    super('Boot');
-  }
+  constructor() { super('Boot'); }
 
   preload(): void {
-    // 加载占位资源
-    this.load.image('player', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
-    this.load.image('monster', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
+    this.cameras.main.setBackgroundColor('#0f0f23');
+    this.add.text(512, 384, '加载中...', {
+      fontSize: '24px', color: '#ffffff'
+    }).setOrigin(0.5);
   }
 
   create(): void {
