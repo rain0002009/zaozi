@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { PlayerCharacter } from '../entities/PlayerCharacter';
 import { gameState, ROUTES, RouteDefinition, Stroke, STROKES } from '../state/GameState';
 
 type EnemyKind = 'chaser' | 'ranged' | 'charger' | 'boss';
@@ -35,6 +36,7 @@ type Pickup = {
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Container;
+  private character!: PlayerCharacter;
   private enemies: Enemy[] = [];
   private projectiles: Projectile[] = [];
   private pickups: Pickup[] = [];
@@ -47,6 +49,8 @@ export class GameScene extends Phaser.Scene {
   private dodgeVelocity = new Phaser.Math.Vector2();
   private invulnerableUntil = 0;
   private aimAngle = 0;
+  private hasAimPointer = false;
+  private meleeAimAngle = 0;
   private encounterCleared = false;
   private ended = false;
   private paused = false;
@@ -78,6 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.dodgeRemaining = 0;
     this.invulnerableUntil = 0;
     this.aimAngle = 0;
+    this.hasAimPointer = false;
     this.encounterCleared = false;
     this.ended = false;
     this.paused = false;
@@ -107,13 +112,7 @@ export class GameScene extends Phaser.Scene {
 
   private createPlayer(): void {
     this.player = this.add.container(512, 555).setDepth(5);
-    this.player.add(this.add.circle(0, 0, 29, 0x557d65, 0.25));
-    this.player.add(this.add.circle(0, 0, 21, 0xe4eadc).setStrokeStyle(2, 0x4c6653));
-    this.player.add(this.add.text(0, 0, '人', { fontFamily: 'serif', fontSize: '29px', color: '#223229' }).setOrigin(0.5));
-    const aim = this.add.container(0, 0);
-    aim.name = 'aim';
-    aim.add(this.add.rectangle(31, 0, 19, 3, 0x80552f).setOrigin(0, 0.5));
-    this.player.add(aim);
+    this.character = new PlayerCharacter(this, this.player);
   }
 
   private createHud(): void {
@@ -144,12 +143,26 @@ export class GameScene extends Phaser.Scene {
     this.fireKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
     this.pauseKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      this.aimAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+      this.hasAimPointer = true;
+      this.updateAim(pointer);
     });
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.hasAimPointer = true;
+      this.updateAim(pointer);
       if (pointer.rightButtonDown()) this.castFire();
       else this.meleeAttack();
     });
+    const pointer = this.input.activePointer;
+    if (pointer.x > 0 && pointer.y > 0) {
+      this.hasAimPointer = true;
+      this.updateAim(pointer);
+    }
+  }
+
+  private updateAim(pointer: Phaser.Input.Pointer): void {
+    const dx = pointer.worldX - this.player.x;
+    const dy = pointer.worldY - this.player.y;
+    if (dx * dx + dy * dy > 12 * 12) this.aimAngle = Math.atan2(dy, dx);
   }
 
   private spawnEncounter(): void {
@@ -175,10 +188,14 @@ export class GameScene extends Phaser.Scene {
 
   private spawnPosition(index: number, count: number): Phaser.Math.Vector2 {
     const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-    return new Phaser.Math.Vector2(
+    const position = new Phaser.Math.Vector2(
       Phaser.Math.Clamp(512 + Math.cos(angle) * (245 + (index % 2) * 52), 105, 919),
       Phaser.Math.Clamp(380 + Math.sin(angle) * (190 + (index % 2) * 32), 145, 625),
     );
+    if (position.distance(new Phaser.Math.Vector2(512, 555)) < 180) {
+      position.set(index % 2 === 0 ? 132 : 892, 548);
+    }
+    return position;
   }
 
   private spawnEnemy(kind: EnemyKind, name: string, x: number, y: number): void {
@@ -204,18 +221,32 @@ export class GameScene extends Phaser.Scene {
   }
 
   private meleeAttack(): void {
-    if (this.attackCooldown > 0 || this.encounterCleared || this.ended || this.paused) return;
+    if (this.attackCooldown > 0 || this.encounterCleared || this.ended || this.paused || !this.character.startAttack(this.aimAngle)) return;
     this.attackCooldown = 330;
-    const degrees = Phaser.Math.RadToDeg(this.aimAngle);
-    const slash = this.add.arc(this.player.x, this.player.y, 88, degrees - 56, degrees + 56, false, 0xd8b66e, 0.34)
-      .setStrokeStyle(5, 0xd8b66e, 0.92).setDepth(8);
-    this.tweens.add({ targets: slash, alpha: 0, scale: 1.18, duration: 180, onComplete: () => slash.destroy() });
+    this.meleeAimAngle = this.aimAngle;
+  }
+
+  private resolveMeleeHit(): void {
+    this.drawMeleeTrail();
     const hits = this.enemies.filter((enemy) => {
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
       const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
-      return distance < (enemy.kind === 'boss' ? 132 : 112) && Math.abs(Phaser.Math.Angle.Wrap(angle - this.aimAngle)) < Phaser.Math.DegToRad(60);
+      return distance < (enemy.kind === 'boss' ? 132 : 112) && Math.abs(Phaser.Math.Angle.Wrap(angle - this.meleeAimAngle)) < Phaser.Math.DegToRad(60);
     });
-    hits.forEach((enemy) => this.damageEnemy(enemy, 1, this.aimAngle));
+    hits.forEach((enemy) => this.damageEnemy(enemy, 1, this.meleeAimAngle));
+  }
+
+  private drawMeleeTrail(): void {
+    const trail = this.add.graphics().setDepth(7).setAlpha(0.72);
+    trail.lineStyle(5, 0x3d493f, 0.42);
+    trail.beginPath();
+    trail.arc(this.player.x, this.player.y, 83, this.meleeAimAngle - Phaser.Math.DegToRad(55), this.meleeAimAngle + Phaser.Math.DegToRad(52));
+    trail.strokePath();
+    trail.lineStyle(2, 0xd8c18c, 0.7);
+    trail.beginPath();
+    trail.arc(this.player.x, this.player.y, 89, this.meleeAimAngle - Phaser.Math.DegToRad(43), this.meleeAimAngle + Phaser.Math.DegToRad(58));
+    trail.strokePath();
+    this.tweens.add({ targets: trail, alpha: 0, duration: 140, onComplete: () => trail.destroy() });
   }
 
   private castFire(): void {
@@ -355,7 +386,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       if (distance < (enemy.kind === 'boss' ? 68 : 42) && enemy.attackCooldown <= 0) {
-        this.takeDamage(enemy.damage);
+        this.takeDamage(enemy.damage, Phaser.Math.Angle.Between(enemy.body.x, enemy.body.y, this.player.x, this.player.y));
         enemy.attackCooldown = 850;
       }
       enemy.body.x = Phaser.Math.Clamp(enemy.body.x, 72, 952);
@@ -413,7 +444,7 @@ export class GameScene extends Phaser.Scene {
       let consumed = projectile.ttl <= 0 || projectile.body.x < 55 || projectile.body.x > 969 || projectile.body.y < 100 || projectile.body.y > 680;
       if (projectile.hostile) {
         if (Phaser.Math.Distance.Between(projectile.body.x, projectile.body.y, this.player.x, this.player.y) < 27) {
-          this.takeDamage(projectile.damage);
+          this.takeDamage(projectile.damage, projectile.velocity.angle());
           consumed = true;
         }
       } else {
@@ -438,25 +469,43 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private takeDamage(rawDamage: number): void {
+  private takeDamage(rawDamage: number, incomingAngle = 0): void {
     if (this.time.now < this.invulnerableUntil || this.ended) return;
     const damage = Math.ceil(rawDamage * (gameState.hasWord('盾') ? 0.65 : 1));
     this.hp = Math.max(0, this.hp - damage);
     this.invulnerableUntil = this.time.now + 520;
-    this.player.setAlpha(0.35);
+    this.character.startHurt(incomingAngle);
+    this.createInkSpatter(incomingAngle);
     this.cameras.main.shake(120, 0.005);
-    this.time.delayedCall(160, () => this.player.active && this.player.setAlpha(1));
     if (this.hp <= 0) this.gameOver();
+  }
+
+  private createInkSpatter(angle: number): void {
+    for (let index = 0; index < 5; index += 1) {
+      const spread = angle + Math.PI + Phaser.Math.FloatBetween(-0.55, 0.55);
+      const dot = this.add.circle(this.player.x, this.player.y - 10, Phaser.Math.Between(2, 5), 0x26342b, 0.6).setDepth(6);
+      this.tweens.add({
+        targets: dot,
+        x: dot.x + Math.cos(spread) * Phaser.Math.Between(18, 42),
+        y: dot.y + Math.sin(spread) * Phaser.Math.Between(18, 42),
+        alpha: 0,
+        duration: Phaser.Math.Between(180, 300),
+        onComplete: () => dot.destroy(),
+      });
+    }
   }
 
   private gameOver(): void {
     this.ended = true;
+    this.character.startDeath();
     const settlement = gameState.settle('defeat');
-    const overlay = this.add.container(512, 390).setDepth(30);
-    overlay.add(this.add.rectangle(0, 0, 1024, 780, 0x0b100c, 0.84));
-    overlay.add(this.add.text(0, -82, '人 · 归于墨色', { fontFamily: 'serif', fontSize: '44px', color: '#dfb3a5' }).setOrigin(0.5));
-    overlay.add(this.add.text(0, -20, `败退保留四分之一战利品 · 遗失 ${settlement.lost} 枚`, { fontSize: '17px', color: '#cad3c7' }).setOrigin(0.5));
-    overlay.add(this.makeActionButton(0, 68, '返回基地', () => this.scene.start('Base', { settlement })));
+    this.time.delayedCall(560, () => {
+      const overlay = this.add.container(512, 390).setDepth(30);
+      overlay.add(this.add.rectangle(0, 0, 1024, 780, 0x0b100c, 0.84));
+      overlay.add(this.add.text(0, -82, '人 · 归于墨色', { fontFamily: 'serif', fontSize: '44px', color: '#dfb3a5' }).setOrigin(0.5));
+      overlay.add(this.add.text(0, -20, `败退保留四分之一战利品 · 遗失 ${settlement.lost} 枚`, { fontSize: '17px', color: '#cad3c7' }).setOrigin(0.5));
+      overlay.add(this.makeActionButton(0, 68, '返回基地', () => this.scene.start('Base', { settlement })));
+    });
   }
 
   private updatePickups(delta: number): void {
@@ -490,6 +539,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayer(delta: number): void {
+    if (this.hasAimPointer) this.updateAim(this.input.activePointer);
     let x = 0;
     let y = 0;
     if (this.cursors.left.isDown || this.wasd.A.isDown) x -= 1;
@@ -497,27 +547,26 @@ export class GameScene extends Phaser.Scene {
     if (this.cursors.up.isDown || this.wasd.W.isDown) y -= 1;
     if (this.cursors.down.isDown || this.wasd.S.isDown) y += 1;
     const direction = new Phaser.Math.Vector2(x, y).normalize();
-    if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.dodgeCooldown <= 0) {
+    if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.dodgeCooldown <= 0 && this.character.startDodge(this.aimAngle)) {
       const dodgeDirection = direction.lengthSq() > 0 ? direction : new Phaser.Math.Vector2(Math.cos(this.aimAngle), Math.sin(this.aimAngle));
       this.dodgeVelocity.copy(dodgeDirection).scale(560);
       this.dodgeRemaining = 260;
       this.dodgeCooldown = 780;
       this.invulnerableUntil = this.time.now + 310;
-      this.player.setAlpha(0.45);
     }
     if (this.dodgeRemaining > 0) {
       this.player.x += this.dodgeVelocity.x * delta / 1000;
       this.player.y += this.dodgeVelocity.y * delta / 1000;
       this.dodgeRemaining -= delta;
-      if (this.dodgeRemaining <= 0) this.player.setAlpha(1);
     } else {
-      this.player.x += direction.x * 220 * delta / 1000;
-      this.player.y += direction.y * 220 * delta / 1000;
+      const speed = 220 * this.character.movementMultiplier;
+      this.player.x += direction.x * speed * delta / 1000;
+      this.player.y += direction.y * speed * delta / 1000;
     }
     this.player.x = Phaser.Math.Clamp(this.player.x, 72, 952);
     this.player.y = Phaser.Math.Clamp(this.player.y, 118, 660);
-    const aim = this.player.getByName('aim') as Phaser.GameObjects.Container;
-    aim.rotation = this.aimAngle;
+    if (this.hasAimPointer) this.updateAim(this.input.activePointer);
+    if (this.character.update(delta, direction, this.aimAngle)) this.resolveMeleeHit();
   }
 
   private togglePause(): void {
