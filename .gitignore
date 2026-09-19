@@ -3,3 +3,6 @@ dist
 .DS_Store
 .idea
 .pnpm-store
+
+# Generated character visual checks; keep the Markdown tickets and test script.
+.scratch/character-art/*.png
