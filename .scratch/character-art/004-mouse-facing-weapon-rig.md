@@ -13,5 +13,7 @@
 - [x] 更新美术需求并保留旧背面、侧面素材作历史参考。
 
 ## 当前状态
-已实现。浏览器回归：`node .scratch/character-art/verify-character.cjs`（需本地开发服务 `http://localhost:5173/`、Chrome 和 Playwright）。
+已实现，后被 `005-side-facing-character-and-weapon-combos.md` 的侧身角色与固定攻击侧方案取代。本任务保留为正面角色方案的历史记录。
+
+历史浏览器回归：`node .scratch/character-art/verify-character.cjs`（需本地开发服务 `http://localhost:5173/`、Chrome 和 Playwright）。
 保留现有点击挥刀、112–155ms 有效帧与 27px 角色逻辑碰撞半径，不引入自动攻击。

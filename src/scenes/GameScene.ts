@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { PlayerCharacter } from '../entities/PlayerCharacter';
+import { KNIFE_COMBO } from '../combat/WeaponCombo';
+import { AttackEvent, PlayerCharacter } from '../entities/PlayerCharacter';
 import { gameState, ROUTES, RouteDefinition, Stroke, STROKES } from '../state/GameState';
 
 type EnemyKind = 'chaser' | 'ranged' | 'charger' | 'boss';
@@ -34,6 +35,14 @@ type Pickup = {
   ttl: number;
 };
 
+type TrailPoint = {
+  x: number;
+  y: number;
+  age: number;
+  comboStep: number;
+  side: string;
+};
+
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Container;
   private character!: PlayerCharacter;
@@ -42,7 +51,6 @@ export class GameScene extends Phaser.Scene {
   private pickups: Pickup[] = [];
   private route!: RouteDefinition;
   private hp = 100;
-  private attackCooldown = 0;
   private fireCooldown = 0;
   private dodgeCooldown = 0;
   private dodgeRemaining = 0;
@@ -50,7 +58,6 @@ export class GameScene extends Phaser.Scene {
   private invulnerableUntil = 0;
   private aimAngle = 0;
   private hasAimPointer = false;
-  private meleeAimAngle = 0;
   private encounterCleared = false;
   private ended = false;
   private paused = false;
@@ -66,6 +73,8 @@ export class GameScene extends Phaser.Scene {
   private abilityText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
   private pauseOverlay?: Phaser.GameObjects.Container;
+  private knifeTrail!: Phaser.GameObjects.Graphics;
+  private knifeTrailPoints: TrailPoint[] = [];
 
   constructor() { super('Game'); }
 
@@ -76,7 +85,6 @@ export class GameScene extends Phaser.Scene {
     this.enemies = [];
     this.projectiles = [];
     this.pickups = [];
-    this.attackCooldown = 0;
     this.fireCooldown = 0;
     this.dodgeCooldown = 0;
     this.dodgeRemaining = 0;
@@ -86,6 +94,7 @@ export class GameScene extends Phaser.Scene {
     this.encounterCleared = false;
     this.ended = false;
     this.paused = false;
+    this.knifeTrailPoints = [];
 
     this.drawArena();
     this.createPlayer();
@@ -113,6 +122,7 @@ export class GameScene extends Phaser.Scene {
   private createPlayer(): void {
     this.player = this.add.container(512, 555).setDepth(5);
     this.character = new PlayerCharacter(this, this.player);
+    this.knifeTrail = this.add.graphics().setDepth(7).setName('knife-trail');
   }
 
   private createHud(): void {
@@ -126,7 +136,7 @@ export class GameScene extends Phaser.Scene {
     this.abilityText = this.add.text(790, 20, '', { fontSize: '14px', color: '#e0d8c2', align: 'right' }).setOrigin(1, 0).setDepth(21);
     this.add.text(978, 24, this.route.title, { fontFamily: 'serif', fontSize: '22px', color: '#e4cf9f' }).setOrigin(1, 0).setDepth(21);
     this.add.text(978, 56, `第 ${gameState.expedition?.area ?? 1} / 3 区域`, { fontSize: '13px', color: '#8fa092' }).setOrigin(1, 0).setDepth(21);
-    this.statusText = this.add.text(512, 731, '左键挥刀 · 空格闪避 · P 暂停', { fontSize: '15px', color: '#bdc8ba' }).setOrigin(0.5).setDepth(20);
+    this.statusText = this.add.text(512, 731, '左键连击 · 空格闪避 · P 暂停', { fontSize: '15px', color: '#bdc8ba' }).setOrigin(0.5).setDepth(20);
     this.refreshHud();
   }
 
@@ -221,32 +231,58 @@ export class GameScene extends Phaser.Scene {
   }
 
   private meleeAttack(): void {
-    if (this.attackCooldown > 0 || this.encounterCleared || this.ended || this.paused || !this.character.startAttack(this.aimAngle)) return;
-    this.attackCooldown = 330;
-    this.meleeAimAngle = this.aimAngle;
+    const horizontalOffset = this.input.activePointer.worldX - this.player.x;
+    const attackSide = horizontalOffset < -20 ? 'left' : horizontalOffset > 20 ? 'right' : this.character.facing;
+    const attackAngle = attackSide === 'right' ? 0 : Math.PI;
+    if (this.encounterCleared || this.ended || this.paused || !this.character.startAttack(attackAngle)) return;
   }
 
-  private resolveMeleeHit(): void {
-    this.drawMeleeTrail();
+  private resolveMeleeHit(attack: AttackEvent): void {
+    const attackSpec = KNIFE_COMBO.attacks[attack.comboStep - 1];
+    const attackAngle = attack.side === 'right' ? 0 : Math.PI;
     const hits = this.enemies.filter((enemy) => {
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
       const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
-      return distance < (enemy.kind === 'boss' ? 132 : 112) && Math.abs(Phaser.Math.Angle.Wrap(angle - this.meleeAimAngle)) < Phaser.Math.DegToRad(60);
+      return distance < attackSpec.range
+        && Math.abs(Phaser.Math.Angle.Wrap(angle - attackAngle)) < Phaser.Math.DegToRad(attackSpec.arcDegrees / 2);
     });
-    hits.forEach((enemy) => this.damageEnemy(enemy, 1, this.meleeAimAngle));
+    hits.forEach((enemy) => this.damageEnemy(enemy, attackSpec.damage, attackAngle, attackSpec.knockback));
+    if (attack.comboStep === 3 && hits.length > 0) this.cameras.main.shake(80, 0.0025);
   }
 
-  private drawMeleeTrail(): void {
-    const trail = this.add.graphics().setDepth(7).setAlpha(0.72);
-    trail.lineStyle(5, 0x3d493f, 0.42);
-    trail.beginPath();
-    trail.arc(this.player.x, this.player.y, 83, this.meleeAimAngle - Phaser.Math.DegToRad(55), this.meleeAimAngle + Phaser.Math.DegToRad(52));
-    trail.strokePath();
-    trail.lineStyle(2, 0xd8c18c, 0.7);
-    trail.beginPath();
-    trail.arc(this.player.x, this.player.y, 89, this.meleeAimAngle - Phaser.Math.DegToRad(43), this.meleeAimAngle + Phaser.Math.DegToRad(58));
-    trail.strokePath();
-    this.tweens.add({ targets: trail, alpha: 0, duration: 140, onComplete: () => trail.destroy() });
+  private updateKnifeTrail(delta: number): void {
+    this.knifeTrailPoints.forEach((point) => { point.age += delta; });
+    this.knifeTrailPoints = this.knifeTrailPoints.filter((point) => point.age < 140);
+
+    if (this.character.action === 'attack') {
+      const tip = this.character.weaponTipWorld();
+      const previous = this.knifeTrailPoints[this.knifeTrailPoints.length - 1];
+      if (!previous || previous.comboStep !== this.character.comboStep || previous.side !== this.character.facing
+        || Phaser.Math.Distance.Between(previous.x, previous.y, tip.x, tip.y) >= 1.5) {
+        this.knifeTrailPoints.push({
+          x: tip.x, y: tip.y, age: 0,
+          comboStep: this.character.comboStep,
+          side: this.character.facing,
+        });
+      } else {
+        previous.x = tip.x;
+        previous.y = tip.y;
+        previous.age = 0;
+      }
+      this.knifeTrail.setData('tip', { x: tip.x, y: tip.y });
+    }
+
+    this.knifeTrail.clear();
+    for (let index = 1; index < this.knifeTrailPoints.length; index += 1) {
+      const from = this.knifeTrailPoints[index - 1];
+      const to = this.knifeTrailPoints[index];
+      if (from.comboStep !== to.comboStep || from.side !== to.side) continue;
+      const life = 1 - to.age / 140;
+      const width = to.comboStep === 3 ? 7 : to.comboStep === 2 ? 4 : 5;
+      this.knifeTrail.lineStyle(Math.max(1, width * life), 0x34443a, 0.48 * life);
+      this.knifeTrail.lineBetween(from.x, from.y, to.x, to.y);
+    }
+    this.knifeTrail.setData('pointCount', this.knifeTrailPoints.length);
   }
 
   private castFire(): void {
@@ -263,12 +299,13 @@ export class GameScene extends Phaser.Scene {
     this.projectiles.push({ body, velocity, hostile: false, damage: 3, ttl: 1600 });
   }
 
-  private damageEnemy(enemy: Enemy, damage: number, knockbackAngle: number): void {
+  private damageEnemy(enemy: Enemy, damage: number, knockbackAngle: number, knockback = 16): void {
     if (!enemy.body.active) return;
     enemy.hp -= damage;
     enemy.healthFill.scaleX = Math.max(0, enemy.hp / enemy.maxHp);
-    enemy.body.x += Math.cos(knockbackAngle) * (enemy.kind === 'boss' ? 5 : 16);
-    enemy.body.y += Math.sin(knockbackAngle) * (enemy.kind === 'boss' ? 5 : 16);
+    const appliedKnockback = enemy.kind === 'boss' ? Math.min(5, knockback) : knockback;
+    enemy.body.x += Math.cos(knockbackAngle) * appliedKnockback;
+    enemy.body.y += Math.sin(knockbackAngle) * appliedKnockback;
     enemy.body.setAlpha(0.42);
     this.time.delayedCall(80, () => enemy.body.active && enemy.body.setAlpha(1));
     if (enemy.hp <= 0) this.killEnemy(enemy);
@@ -539,7 +576,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayer(delta: number): void {
-    if (this.hasAimPointer) this.updateAim(this.input.activePointer);
+    if (this.hasAimPointer) {
+      this.updateAim(this.input.activePointer);
+      this.character.facePointer(this.input.activePointer.worldX - this.player.x);
+    }
     let x = 0;
     let y = 0;
     if (this.cursors.left.isDown || this.wasd.A.isDown) x -= 1;
@@ -565,8 +605,14 @@ export class GameScene extends Phaser.Scene {
     }
     this.player.x = Phaser.Math.Clamp(this.player.x, 72, 952);
     this.player.y = Phaser.Math.Clamp(this.player.y, 118, 660);
-    if (this.hasAimPointer) this.updateAim(this.input.activePointer);
-    if (this.character.update(delta, direction, this.aimAngle)) this.resolveMeleeHit();
+    if (this.hasAimPointer) {
+      this.updateAim(this.input.activePointer);
+      this.character.facePointer(this.input.activePointer.worldX - this.player.x);
+    }
+    const attack = this.character.update(delta, direction, this.aimAngle);
+    this.player.x = Phaser.Math.Clamp(this.player.x + this.character.rootMotion(delta), 72, 952);
+    this.updateKnifeTrail(delta);
+    if (attack) this.resolveMeleeHit(attack);
   }
 
   private togglePause(): void {
@@ -602,7 +648,6 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.pauseKey)) this.togglePause();
     if (this.ended || this.paused) return;
     if (Phaser.Input.Keyboard.JustDown(this.fireKey)) this.castFire();
-    this.attackCooldown = Math.max(0, this.attackCooldown - delta);
     this.fireCooldown = Math.max(0, this.fireCooldown - delta);
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta);
     this.updatePlayer(delta);

@@ -42,7 +42,7 @@ type MetaState = {
 const STORAGE_KEY = 'zaozi-save-v1';
 
 export const WORDS: Record<WordId, { type: string; summary: string; recipe: Partial<Inventory> }> = {
-  刀: { type: '武器字', summary: '左键挥斩，可同时命中扇形内的敌人。', recipe: { '丿': 1, '㇇': 1 } },
+  刀: { type: '武器字', summary: '左键连击，只命中角色当前攻击侧的敌人。', recipe: { '丿': 1, '㇇': 1 } },
   火: { type: '技能字', summary: '按 Q 或右键发射火字，命中后爆裂。', recipe: { '丶': 1, '丿': 2, '㇏': 1 } },
   盾: { type: '防具字', summary: '受到的伤害降低 35%。', recipe: { '一': 3, '丨': 1, '丿': 2, '㇇': 1 } },
 };

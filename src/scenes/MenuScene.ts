@@ -31,7 +31,7 @@ export class MenuScene extends Phaser.Scene {
     startBtn.on('pointerout', () => startBtn.setBackgroundColor('#4c382b'));
     startBtn.on('pointerdown', () => this.scene.start('Base'));
 
-    this.add.text(512, 674, 'WASD 移动 · 左键挥刀 · Q / 右键施放 · 空格闪避', {
+    this.add.text(512, 674, 'WASD 移动 · 左键连击 · Q / 右键施放 · 空格闪避', {
       fontSize: '15px', color: '#b9c1b8'
     }).setOrigin(0.5);
   }

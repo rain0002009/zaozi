@@ -9,8 +9,8 @@ export class BootScene extends Phaser.Scene {
       fontSize: '24px', color: '#ffffff'
     }).setOrigin(0.5);
     const parts = [
-      'body_front', 'head_front', 'rear_arm_front',
-      'front_upper_arm_front', 'front_forearm_front', 'hand_front',
+      'rear_leg_side', 'rear_arm_side', 'torso_side', 'head_side', 'front_leg_side',
+      'weapon_upper_arm_side', 'weapon_forearm_side', 'weapon_hand_side',
       'weapon_knife',
     ];
     parts.forEach((part) => this.load.image(`ren_${part}`, `/assets/characters/ren/source/ren_${part}.png`));
