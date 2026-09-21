@@ -1,120 +1,949 @@
 import Phaser from 'phaser';
-import { gameState, STROKES, Settlement, WORDS, WordId } from '../state/GameState';
+import {
+  gameState,
+  STROKES,
+  Stroke,
+  Settlement,
+  WORDS,
+  WordId,
+  COMPOUND_WEAPONS,
+  CompoundWeaponId,
+} from '../state/GameState';
+import { handwritingService } from '../services/HandwritingService';
 
 type BaseSceneData = { settlement?: Settlement };
 
 export class BaseScene extends Phaser.Scene {
-  constructor() { super('Base'); }
+  // Navigation tabs
+  private currentTab: 'craft' | 'forge' = 'craft';
+
+  // Containers
+  private gridContainer!: Phaser.GameObjects.Container;
+  private forgeContainer!: Phaser.GameObjects.Container;
+  private forgePreviewCard!: Phaser.GameObjects.Container;
+
+  // Forge state
+  private selectedPrefixWord?: WordId;
+  private selectedCoreWord?: WordId;
+
+  // Inventory UI
+  private selectedStrokeForPlacement: Stroke = '一';
+  private inventoryTexts: Record<Stroke, Phaser.GameObjects.Text> = {} as any;
+  private strokeButtons: Record<Stroke, Phaser.GameObjects.Container> = {} as any;
+
+  constructor() {
+    super('Base');
+  }
 
   create(data: BaseSceneData): void {
-    this.cameras.main.setBackgroundColor('#d7d0bc');
-    this.drawInkLandscape();
+    this.cameras.main.setBackgroundColor('#171c18');
+    this.drawInkBackground();
 
-    this.add.text(54, 40, '归 字 营', {
-      fontFamily: 'serif', fontSize: '46px', color: '#242821',
+    // Top Header
+    this.add.text(48, 28, '归 字 营', {
+      fontFamily: 'serif',
+      fontSize: '38px',
+      color: '#f0e8d5',
     });
-    this.add.text(56, 98, '人族最后的造字之所', {
-      fontSize: '16px', color: '#60655b',
+    this.add.text(188, 38, '人族最后的造字与铸武之所', {
+      fontSize: '14px',
+      color: '#8e968b',
     });
 
-    this.drawInventory();
-    this.drawWordWorkshop();
+    // Top Tab Switcher
+    this.drawTabSwitcher();
+
+    // Inventory Bar (always visible at top)
+    this.drawInventoryBar();
+
+    // Container for Handwriting Calligraphy Board
+    this.gridContainer = this.add.container(0, 0);
+    this.drawHandwritingWorkshop();
+
+    // Container for Weapon Forge
+    this.forgeContainer = this.add.container(0, 0);
+    this.drawWeaponForge();
+
+    // Expedition Gate on the right
     this.drawExpeditionGate();
+
+    // Switch to initial tab
+    this.switchTab('craft');
+
     if (data.settlement) this.drawSettlement(data.settlement);
   }
 
-  private drawInkLandscape(): void {
-    const ink = this.add.graphics();
-    ink.fillStyle(0xebe6d8, 1).fillRect(0, 0, 1024, 768);
-    ink.fillStyle(0xb6b9a6, 0.45);
-    ink.fillTriangle(0, 310, 240, 98, 430, 310);
-    ink.fillTriangle(215, 310, 480, 142, 690, 310);
-    ink.fillStyle(0x737c70, 0.28);
-    ink.fillTriangle(570, 300, 795, 104, 1024, 300);
-    ink.fillStyle(0x313a31, 0.9).fillRect(0, 682, 1024, 86);
-    for (let index = 0; index < 24; index += 1) {
-      const x = 20 + index * 46;
-      ink.lineStyle(2, 0x697064, 0.17).lineBetween(x, 0, x - 110, 682);
-    }
-    this.add.circle(868, 95, 44, 0xb84f3e, 0.82);
-    this.add.text(868, 95, '造', { fontFamily: 'serif', fontSize: '34px', color: '#f0e9d8' }).setOrigin(0.5);
+  private drawInkBackground(): void {
+    const bg = this.add.graphics();
+    bg.fillStyle(0x19211c, 1).fillRect(0, 0, 1024, 768);
+
+    // Mountain silhouettes
+    bg.fillStyle(0x232d26, 0.6);
+    bg.fillTriangle(0, 480, 220, 180, 440, 480);
+    bg.fillTriangle(190, 480, 460, 220, 710, 480);
+    bg.fillStyle(0x161e18, 0.85);
+    bg.fillTriangle(480, 480, 750, 190, 1024, 480);
+
+    // Ground ink bar
+    bg.fillStyle(0x121714, 0.95).fillRect(0, 710, 1024, 58);
   }
 
-  private drawInventory(): void {
-    this.add.rectangle(50, 146, 924, 94, 0x202a24, 0.94).setOrigin(0).setStrokeStyle(1, 0x748070);
-    this.add.text(72, 164, '仓中笔画', { fontSize: '17px', color: '#bec8b8' });
-    STROKES.forEach((stroke, index) => {
-      const x = 216 + index * 112;
-      this.add.text(x, 166, stroke, { fontFamily: 'serif', fontSize: '25px', color: '#f0dfb3' }).setOrigin(0.5, 0);
-      this.add.text(x, 205, String(gameState.meta.inventory[stroke]), { fontSize: '15px', color: '#ffffff' }).setOrigin(0.5);
+  private drawTabSwitcher(): void {
+    const tabs = [
+      { id: 'craft' as const, label: '✍️ 毛笔宣纸造字台' },
+      { id: 'forge' as const, label: '⚔️ 铸武台 (两字成武)' },
+    ];
+
+    tabs.forEach((tab, index) => {
+      const x = 520 + index * 160;
+      const btn = this.add.text(x, 34, tab.label, {
+        fontSize: '14px',
+        color: this.currentTab === tab.id ? '#f2e8d3' : '#889384',
+        backgroundColor: this.currentTab === tab.id ? '#3c4c3e' : '#212a23',
+        padding: { x: 12, y: 7 },
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+      btn.on('pointerdown', () => this.switchTab(tab.id));
+      (this as any)[`tabBtn_${tab.id}`] = btn;
     });
   }
 
-  private drawWordWorkshop(): void {
-    this.add.text(52, 274, '造字台', { fontFamily: 'serif', fontSize: '30px', color: '#283029' });
-    this.add.text(52, 312, '笔画必须组成正确的字，能力才会在战场显现。', { fontSize: '15px', color: '#62675f' });
+  private switchTab(tab: 'craft' | 'forge'): void {
+    this.currentTab = tab;
+    this.gridContainer.setVisible(tab === 'craft');
+    this.forgeContainer.setVisible(tab === 'forge');
 
-    const words: WordId[] = ['刀', '火', '盾'];
-    words.forEach((word, index) => {
-      const x = 52 + index * 244;
-      const unlocked = gameState.meta.unlockedWords.includes(word);
-      const canCraft = gameState.canCraft(word);
-      const card = this.add.rectangle(x, 354, 220, 226, unlocked ? 0xe2e3d2 : 0xeee8d8, 0.98)
-        .setOrigin(0).setStrokeStyle(2, unlocked ? 0x718873 : 0xa8a08d);
-      this.add.text(x + 22, 374, word, {
-        fontFamily: 'serif', fontSize: '52px', color: unlocked ? '#273c2c' : '#77756e',
-      });
-      this.add.text(x + 94, 382, WORDS[word].type, { fontSize: '14px', color: '#777166' });
-      this.add.text(x + 22, 444, WORDS[word].summary, {
-        fontSize: '14px', color: '#4b4c46', wordWrap: { width: 176 }, lineSpacing: 6,
-      });
-      const recipe = Object.entries(WORDS[word].recipe).map(([stroke, amount]) => `${stroke}×${amount}`).join('  ');
-      this.add.text(x + 22, 510, recipe, { fontFamily: 'serif', fontSize: '16px', color: '#795e39' });
+    const btnCraft = (this as any).tabBtn_craft as Phaser.GameObjects.Text | undefined;
+    const btnForge = (this as any).tabBtn_forge as Phaser.GameObjects.Text | undefined;
 
-      const label = unlocked ? '已装备' : canCraft ? '合成' : '笔画不足';
-      const button = this.add.text(x + 110, 552, label, {
-        fontSize: '16px', color: unlocked ? '#667064' : canCraft ? '#f4ead2' : '#89867c',
-        backgroundColor: canCraft && !unlocked ? '#754d38' : '#d3cdbc', padding: { x: 18, y: 8 },
+    if (btnCraft) {
+      btnCraft.setColor(tab === 'craft' ? '#f2e8d3' : '#889384');
+      btnCraft.setBackgroundColor(tab === 'craft' ? '#3c4c3e' : '#212a23');
+    }
+    if (btnForge) {
+      btnForge.setColor(tab === 'forge' ? '#f2e8d3' : '#889384');
+      btnForge.setBackgroundColor(tab === 'forge' ? '#3c4c3e' : '#212a23');
+    }
+  }
+
+  // --- 1. 仓中笔画栏 (Inventory Bar) ---
+
+  private drawInventoryBar(): void {
+    const bar = this.add.container(48, 80);
+
+    // Background panel
+    bar.add(this.add.rectangle(0, 0, 928, 64, 0x222c24, 0.95).setOrigin(0).setStrokeStyle(1, 0x48584a));
+    bar.add(this.add.text(20, 22, '仓中笔画:', { fontSize: '14px', color: '#c4d0be', fontStyle: 'bold' }));
+
+    STROKES.forEach((stroke, index) => {
+      const x = 120 + index * 95;
+      const slot = this.add.container(x, 8);
+
+      const bg = this.add.rectangle(0, 0, 84, 48, 0x1a221c, 0.9)
+        .setOrigin(0)
+        .setStrokeStyle(1.5, stroke === this.selectedStrokeForPlacement ? 0xd0b466 : 0x3d4b3f);
+
+      const strokeText = this.add.text(24, 8, stroke, {
+        fontFamily: 'serif',
+        fontSize: '26px',
+        color: '#f0e3c5',
+      });
+
+      const countText = this.add.text(64, 24, `${gameState.meta.inventory[stroke]}`, {
+        fontSize: '13px',
+        color: '#ffffff',
       }).setOrigin(0.5);
-      if (!unlocked && canCraft) {
-        card.setInteractive({ useHandCursor: true });
-        button.setInteractive({ useHandCursor: true });
-        const craft = () => {
-          if (gameState.craft(word)) this.scene.restart();
-        };
-        card.on('pointerdown', craft);
-        button.on('pointerdown', craft);
+
+      this.inventoryTexts[stroke] = countText;
+      this.strokeButtons[stroke] = slot;
+
+      slot.add([bg, strokeText, countText]);
+
+      bg.setInteractive({ useHandCursor: true });
+      bg.on('pointerdown', () => {
+        this.selectedStrokeForPlacement = stroke;
+        this.updateSelectedStrokeHighlight();
+      });
+
+      bar.add(slot);
+    });
+  }
+
+  private updateSelectedStrokeHighlight(): void {
+    STROKES.forEach((s) => {
+      const slot = this.strokeButtons[s];
+      if (slot) {
+        const bg = slot.getAt(0) as Phaser.GameObjects.Rectangle;
+        if (bg) {
+          bg.setStrokeStyle(1.5, s === this.selectedStrokeForPlacement ? 0xd0b466 : 0x3d4b3f);
+        }
       }
     });
   }
 
+  // --- 2. 毛笔宣纸造字台 (Handwriting Calligraphy Workshop) ---
+
+  // Handwriting drawing state
+  private drawnStrokes: number[][][] = [];
+  private currentStroke: number[][] = [];
+  private isDrawing = false;
+  private inkGraphics!: Phaser.GameObjects.Graphics;
+  private canvasWidth = 288;
+  private canvasHeight = 288;
+  private canvasX = 48;
+  private canvasY = 224;
+
+  // Recognition state
+  private candidates: Array<{ character: string; score: number; isKnown: boolean; wordId?: WordId }> = [];
+  private selectedCandidate?: { character: string; score: number; isKnown: boolean; wordId?: WordId };
+  private candidateButtons: Phaser.GameObjects.Container[] = [];
+  private candidateStatusText!: Phaser.GameObjects.Text;
+  private detailCharText!: Phaser.GameObjects.Text;
+  private detailTypeText!: Phaser.GameObjects.Text;
+  private detailSummaryText!: Phaser.GameObjects.Text;
+  private detailRecipeText!: Phaser.GameObjects.Text;
+  private detailStatusText!: Phaser.GameObjects.Text;
+  private synthesizeButton!: Phaser.GameObjects.Text;
+
+  private drawHandwritingWorkshop(): void {
+    const parent = this.gridContainer;
+
+    // Workshop Title & Subtitle
+    parent.add(this.add.text(48, 160, '毛笔宣纸造字台', {
+      fontFamily: 'serif', fontSize: '24px', color: '#ede3ce',
+    }));
+    parent.add(this.add.text(48, 194, '在宣纸画板上运笔书写。支持 9,507 汉字离线识别，识别后比对仓中笔画即可【凝字成符】。', {
+      fontSize: '13px', color: '#97a393',
+    }));
+
+    // 1. Rice Paper Canvas
+    const boardBg = this.add.rectangle(this.canvasX, this.canvasY, this.canvasWidth, this.canvasHeight, 0xf6efdf, 0.98)
+      .setOrigin(0)
+      .setStrokeStyle(2.5, 0x6e573e);
+    parent.add(boardBg);
+
+    // Draw Mi-Grid red dashed guidelines
+    const miLines = this.add.graphics();
+    miLines.lineStyle(1.5, 0xcc6655, 0.35);
+    // Diagonals
+    miLines.lineBetween(this.canvasX, this.canvasY, this.canvasX + this.canvasWidth, this.canvasY + this.canvasHeight);
+    miLines.lineBetween(this.canvasX + this.canvasWidth, this.canvasY, this.canvasX, this.canvasY + this.canvasHeight);
+    // Center cross
+    miLines.lineBetween(this.canvasX + this.canvasWidth / 2, this.canvasY, this.canvasX + this.canvasWidth / 2, this.canvasY + this.canvasHeight);
+    miLines.lineBetween(this.canvasX, this.canvasY + this.canvasHeight / 2, this.canvasX + this.canvasWidth, this.canvasY + this.canvasHeight / 2);
+    // Inner box for Nine-Palace guide
+    miLines.strokeRect(this.canvasX + this.canvasWidth / 3, this.canvasY + this.canvasHeight / 3, this.canvasWidth / 3, this.canvasHeight / 3);
+    parent.add(miLines);
+
+    // Graphics for user ink strokes
+    this.inkGraphics = this.add.graphics();
+    parent.add(this.inkGraphics);
+
+    // Interactive drawing surface
+    const drawZone = this.add.rectangle(this.canvasX, this.canvasY, this.canvasWidth, this.canvasHeight, 0x000000, 0)
+      .setOrigin(0)
+      .setInteractive({ useHandCursor: true });
+    parent.add(drawZone);
+
+    drawZone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.currentTab !== 'craft') return;
+      this.isDrawing = true;
+      const lx = pointer.x - this.canvasX;
+      const ly = pointer.y - this.canvasY;
+      this.currentStroke = [[lx, ly]];
+      this.inkGraphics.fillStyle(0x1a1a1a, 0.95);
+      this.inkGraphics.fillCircle(pointer.x, pointer.y, 3);
+    });
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.isDrawing) return;
+      const lx = pointer.x - this.canvasX;
+      const ly = pointer.y - this.canvasY;
+
+      // Bound check
+      if (lx < -15 || lx > this.canvasWidth + 15 || ly < -15 || ly > this.canvasHeight + 15) {
+        this.finishStroke();
+        return;
+      }
+
+      const last = this.currentStroke[this.currentStroke.length - 1];
+      const distSq = (lx - last[0]) ** 2 + (ly - last[1]) ** 2;
+      if (distSq >= 9) {
+        this.currentStroke.push([lx, ly]);
+        this.inkGraphics.lineStyle(5.5, 0x1a1a1a, 0.95);
+        this.inkGraphics.lineBetween(this.canvasX + last[0], this.canvasY + last[1], pointer.x, pointer.y);
+      }
+    });
+
+    this.input.on('pointerup', () => {
+      if (this.isDrawing) {
+        this.finishStroke();
+      }
+    });
+
+    // Control buttons below canvas
+    const undoBtn = this.add.text(this.canvasX, this.canvasY + this.canvasHeight + 10, '↶ 撤销一笔', {
+      fontSize: '13px',
+      color: '#e2d7c5',
+      backgroundColor: '#354338',
+      padding: { x: 12, y: 6 },
+    }).setOrigin(0).setInteractive({ useHandCursor: true });
+    undoBtn.on('pointerdown', () => this.undoStroke());
+    parent.add(undoBtn);
+
+    const clearBtn = this.add.text(this.canvasX + 105, this.canvasY + this.canvasHeight + 10, '🗑 清空画板', {
+      fontSize: '13px',
+      color: '#e2d7c5',
+      backgroundColor: '#4a3b2c',
+      padding: { x: 12, y: 6 },
+    }).setOrigin(0).setInteractive({ useHandCursor: true });
+    clearBtn.on('pointerdown', () => this.clearHandwriting());
+    parent.add(clearBtn);
+
+    // 2. Right Recognition & Detail Box
+    const panelX = this.canvasX + this.canvasWidth + 20;
+    const panelY = this.canvasY;
+    const panelW = 425;
+    const panelH = this.canvasHeight + 40;
+
+    parent.add(this.add.rectangle(panelX, panelY, panelW, panelH, 0x222a23, 0.95)
+      .setOrigin(0)
+      .setStrokeStyle(1.5, 0x48584a));
+
+    parent.add(this.add.text(panelX + 16, panelY + 14, '【实时手写汉字识别】', {
+      fontFamily: 'serif', fontSize: '18px', color: '#ebd8b2',
+    }));
+
+    this.candidateStatusText = this.add.text(panelX + 16, panelY + 42, '提笔挥毫，笔走龙蛇（离线万字库即时匹配）', {
+      fontSize: '12px', color: '#97a393',
+    });
+    parent.add(this.candidateStatusText);
+
+    // 6 Candidate buttons row
+    this.candidateButtons = [];
+    for (let i = 0; i < 6; i++) {
+      const bx = panelX + 16 + i * 66;
+      const by = panelY + 66;
+
+      const slot = this.add.container(bx, by);
+      const bg = this.add.rectangle(0, 0, 58, 48, 0x1a231d, 0.95)
+        .setOrigin(0)
+        .setStrokeStyle(1, 0x3d4b3f)
+        .setInteractive({ useHandCursor: true });
+
+      const charText = this.add.text(29, 20, '', {
+        fontFamily: 'serif', fontSize: '26px', color: '#f0e3c5',
+      }).setOrigin(0.5);
+
+      const starText = this.add.text(50, 6, '', {
+        fontSize: '10px', color: '#fbbf24',
+      }).setOrigin(0.5);
+
+      slot.add([bg, charText, starText]);
+      parent.add(slot);
+      this.candidateButtons.push(slot);
+
+      bg.on('pointerdown', () => {
+        if (this.candidates[i]) {
+          this.selectedCandidate = this.candidates[i];
+          this.updateCandidateUI();
+          this.updateDetailCard();
+        }
+      });
+    }
+
+    // Candidate Detail Card
+    const cardY = panelY + 126;
+    parent.add(this.add.rectangle(panelX + 16, cardY, panelW - 32, 136, 0x19211c, 0.95)
+      .setOrigin(0)
+      .setStrokeStyle(1, 0x384539));
+
+    this.detailCharText = this.add.text(panelX + 32, cardY + 16, '【未落笔】', {
+      fontFamily: 'serif', fontSize: '26px', color: '#eeddb6',
+    });
+    this.detailTypeText = this.add.text(panelX + 150, cardY + 22, '', {
+      fontSize: '13px', color: '#a0b39c',
+    });
+    this.detailSummaryText = this.add.text(panelX + 32, cardY + 54, '请在左侧宣纸画板书写，系统将实时识别。', {
+      fontSize: '13px', color: '#c4d0be', wordWrap: { width: 360 }, lineSpacing: 4,
+    });
+    this.detailRecipeText = this.add.text(panelX + 32, cardY + 82, '', {
+      fontSize: '12px', color: '#e2d7c5',
+    });
+    this.detailStatusText = this.add.text(panelX + 32, cardY + 106, '', {
+      fontSize: '12px', color: '#86efac',
+    });
+
+    parent.add([
+      this.detailCharText,
+      this.detailTypeText,
+      this.detailSummaryText,
+      this.detailRecipeText,
+      this.detailStatusText,
+    ]);
+
+    // Synthesize Button
+    this.synthesizeButton = this.add.text(panelX + panelW - 145, panelY + panelH - 46, '凝 字 成 符', {
+      fontFamily: 'serif',
+      fontSize: '16px',
+      color: '#333333',
+      backgroundColor: '#7c8577',
+      padding: { x: 20, y: 8 },
+    }).setOrigin(0).setInteractive({ useHandCursor: false });
+
+    this.synthesizeButton.on('pointerdown', () => this.executeSynthesis());
+    parent.add(this.synthesizeButton);
+
+    // Recipe Book preview below
+    this.drawRecipeBook(parent, this.canvasX, this.canvasY + this.canvasHeight + 48);
+
+    // Initial state
+    this.updateCandidateUI();
+    this.updateDetailCard();
+  }
+
+  private finishStroke(): void {
+    if (!this.isDrawing) return;
+    this.isDrawing = false;
+    if (this.currentStroke.length >= 2) {
+      this.drawnStrokes.push([...this.currentStroke]);
+      this.currentStroke = [];
+      this.performRecognition();
+    }
+  }
+
+  private redrawInkCanvas(): void {
+    this.inkGraphics.clear();
+    for (const stroke of this.drawnStrokes) {
+      if (stroke.length < 2) continue;
+      this.inkGraphics.lineStyle(5.5, 0x1a1a1a, 0.95);
+      this.inkGraphics.beginPath();
+      this.inkGraphics.moveTo(this.canvasX + stroke[0][0], this.canvasY + stroke[0][1]);
+      for (let i = 1; i < stroke.length; i++) {
+        this.inkGraphics.lineTo(this.canvasX + stroke[i][0], this.canvasY + stroke[i][1]);
+      }
+      this.inkGraphics.strokePath();
+
+      // Caps
+      this.inkGraphics.fillStyle(0x1a1a1a, 0.95);
+      this.inkGraphics.fillCircle(this.canvasX + stroke[0][0], this.canvasY + stroke[0][1], 2.75);
+      this.inkGraphics.fillCircle(this.canvasX + stroke[stroke.length - 1][0], this.canvasY + stroke[stroke.length - 1][1], 2.75);
+    }
+  }
+
+  private undoStroke(): void {
+    if (this.drawnStrokes.length > 0) {
+      this.drawnStrokes.pop();
+      this.redrawInkCanvas();
+      this.performRecognition();
+    }
+  }
+
+  private clearHandwriting(): void {
+    this.drawnStrokes = [];
+    this.currentStroke = [];
+    this.inkGraphics.clear();
+    this.candidates = [];
+    this.selectedCandidate = undefined;
+    this.updateCandidateUI();
+    this.updateDetailCard();
+  }
+
+  private performRecognition(): void {
+    if (this.drawnStrokes.length === 0) {
+      this.candidates = [];
+      this.selectedCandidate = undefined;
+      this.updateCandidateUI();
+      this.updateDetailCard();
+      return;
+    }
+
+    const results = handwritingService.recognize(this.drawnStrokes, 6);
+    this.candidates = results;
+
+    // Prioritize selecting a known word if available among candidates, otherwise the first candidate
+    const firstKnown = results.find((r) => r.isKnown);
+    this.selectedCandidate = firstKnown || results[0];
+
+    this.updateCandidateUI();
+    this.updateDetailCard();
+  }
+
+  private updateCandidateUI(): void {
+    if (this.candidates.length === 0) {
+      this.candidateStatusText.setText(
+        this.drawnStrokes.length === 0
+          ? '提笔挥毫，笔走龙蛇（离线万字库即时匹配）'
+          : '正在运笔分析字形...'
+      );
+    } else {
+      this.candidateStatusText.setText('已识别候选汉字（点击方格可自由切换）：');
+    }
+
+    for (let i = 0; i < 6; i++) {
+      const slot = this.candidateButtons[i];
+      const bg = slot.getAt(0) as Phaser.GameObjects.Rectangle;
+      const charText = slot.getAt(1) as Phaser.GameObjects.Text;
+      const starText = slot.getAt(2) as Phaser.GameObjects.Text;
+
+      const candidate = this.candidates[i];
+      if (candidate) {
+        charText.setText(candidate.character);
+        starText.setText(candidate.isKnown ? '★' : '');
+
+        const isSelected = this.selectedCandidate?.character === candidate.character;
+        if (isSelected) {
+          bg.setStrokeStyle(2, 0xd0b466);
+          bg.setFillStyle(0x28362b, 0.95);
+        } else if (candidate.isKnown) {
+          bg.setStrokeStyle(1.5, 0x86efac);
+          bg.setFillStyle(0x1e2a21, 0.95);
+        } else {
+          bg.setStrokeStyle(1, 0x3d4b3f);
+          bg.setFillStyle(0x1a231d, 0.95);
+        }
+      } else {
+        charText.setText('');
+        starText.setText('');
+        bg.setStrokeStyle(1, 0x2e3930);
+        bg.setFillStyle(0x161d18, 0.6);
+      }
+    }
+  }
+
+  private updateDetailCard(): void {
+    if (!this.selectedCandidate) {
+      this.detailCharText.setText('【未落笔】');
+      this.detailTypeText.setText('');
+      this.detailSummaryText.setText('请在左侧宣纸画板书写，系统将实时识别。');
+      this.detailRecipeText.setText('');
+      this.detailStatusText.setText('');
+      this.setSynthesizeActive(false);
+      return;
+    }
+
+    const candidate = this.selectedCandidate;
+    const char = candidate.character;
+    const isKnown = candidate.isKnown;
+    const wordId = candidate.wordId;
+
+    if (isKnown && wordId) {
+      const def = WORDS[wordId];
+      const check = gameState.canSynthesizeCharacter(wordId);
+      const isAlreadyUnlocked = gameState.meta.unlockedWords.includes(wordId);
+
+      this.detailCharText.setText(`【${def.name}】`);
+      this.detailTypeText.setText(`[${def.type}]`);
+      this.detailSummaryText.setText(def.summary);
+
+      const recipeStr = Object.entries(def.recipe)
+        .map(([s, n]) => `${s}×${n}`)
+        .join(' ');
+      this.detailRecipeText.setText(`配方需消耗笔画：${recipeStr}`);
+
+      if (check.canSynthesize) {
+        this.detailStatusText.setText(
+          isAlreadyUnlocked
+            ? '✓ 仓中笔画充足（此字已收录，可再次凝字补存）'
+            : '✨ 仓中笔画充足！可凝字入库'
+        );
+        this.detailStatusText.setColor('#86efac');
+        this.setSynthesizeActive(true);
+      } else {
+        this.detailStatusText.setText(check.error || '仓中笔画不足');
+        this.detailStatusText.setColor('#f87171');
+        this.setSynthesizeActive(false);
+      }
+    } else {
+      this.detailCharText.setText(`【${char}】`);
+      this.detailTypeText.setText('[世俗字]');
+      this.detailSummaryText.setText(
+        '此字尚未参透兵道奥妙。推荐书写：刀、弓、盾、木、火、金、石、水、风、雷、枪、斧 等。'
+      );
+      this.detailRecipeText.setText('（非兵道词库汉字，暂不可用于铸武）');
+      this.detailStatusText.setText('');
+      this.setSynthesizeActive(false);
+    }
+  }
+
+  private setSynthesizeActive(active: boolean): void {
+    if (active) {
+      this.synthesizeButton.setBackgroundColor('#c59f49');
+      this.synthesizeButton.setColor('#1f190e');
+      this.synthesizeButton.input!.cursor = 'pointer';
+    } else {
+      this.synthesizeButton.setBackgroundColor('#38423a');
+      this.synthesizeButton.setColor('#68756a');
+      this.synthesizeButton.input!.cursor = 'default';
+    }
+  }
+
+  private executeSynthesis(): void {
+    if (!this.selectedCandidate || !this.selectedCandidate.wordId) return;
+
+    const wordId = this.selectedCandidate.wordId;
+    const ok = gameState.synthesizeCharacter(wordId);
+
+    if (ok) {
+      this.showFloatingNotice(`✨ 造字成功！汉字【${wordId}】已凝结入库！可前往铸武台锻造武器。`);
+      this.clearHandwriting();
+      this.refreshInventoryUI();
+      this.refreshRecipeBook();
+      this.refreshForgeUI();
+    }
+  }
+
+  private drawRecipeBook(parent: Phaser.GameObjects.Container, x: number, y: number): void {
+    parent.add(this.add.text(x, y, '已收录汉字字库 (点击查看配方):', {
+      fontSize: '13px', color: '#a0aca0',
+    }));
+
+    const bookContainer = this.add.container(x, y + 24);
+    (this as any).recipeBookContainer = bookContainer;
+    parent.add(bookContainer);
+
+    this.refreshRecipeBook();
+  }
+
+  private refreshRecipeBook(): void {
+    const container = (this as any).recipeBookContainer as Phaser.GameObjects.Container | undefined;
+    if (!container) return;
+    container.removeAll(true);
+
+    const unlocked = gameState.meta.unlockedWords;
+    unlocked.forEach((wordId, index) => {
+      const wx = index * 48;
+      const btn = this.add.text(wx, 0, wordId, {
+        fontFamily: 'serif',
+        fontSize: '24px',
+        color: '#f0e8d5',
+        backgroundColor: '#2b362c',
+        padding: { x: 10, y: 4 },
+      }).setOrigin(0).setInteractive({ useHandCursor: true });
+
+      btn.on('pointerdown', () => {
+        const def = WORDS[wordId];
+        const recipeStr = Object.entries(def.recipe).map(([s, c]) => `${s}×${c}`).join(' ');
+        this.showFloatingNotice(`【${def.name}】(${def.type}): 配方需 ${recipeStr}`);
+      });
+
+      container.add(btn);
+    });
+  }
+
+  // --- 3. 铸武台 (Weapon Forge) ---
+
+  private drawWeaponForge(): void {
+    const parent = this.forgeContainer;
+
+    parent.add(this.add.text(48, 160, '铸武台 (两字组词成武)', {
+      fontFamily: 'serif', fontSize: '24px', color: '#ede3ce',
+    }));
+    parent.add(this.add.text(48, 194, '将【属性/材质字】与【兵刃核心字】放入熔炉，锻造独一无二的词组武器。', {
+      fontSize: '13px', color: '#97a393',
+    }));
+
+    // Slot 1: Prefix / Attribute Word
+    const slot1X = 48;
+    const slotY = 230;
+    parent.add(this.add.rectangle(slot1X, slotY, 140, 140, 0x222c24, 0.98).setOrigin(0).setStrokeStyle(2, 0x5a705e));
+    parent.add(this.add.text(slot1X + 70, slotY + 16, '材质/属性字', { fontSize: '13px', color: '#889888' }).setOrigin(0.5));
+    const slot1Text = this.add.text(slot1X + 70, slotY + 75, this.selectedPrefixWord || '未选', {
+      fontFamily: 'serif', fontSize: '44px', color: this.selectedPrefixWord ? '#f0dfb3' : '#506052',
+    }).setOrigin(0.5);
+    (this as any).forgeSlot1Text = slot1Text;
+    parent.add(slot1Text);
+
+    // Plus sign
+    parent.add(this.add.text(slot1X + 165, slotY + 70, '＋', {
+      fontFamily: 'serif', fontSize: '32px', color: '#c0a87a',
+    }).setOrigin(0.5));
+
+    // Slot 2: Core Weapon Word
+    const slot2X = slot1X + 190;
+    parent.add(this.add.rectangle(slot2X, slotY, 140, 140, 0x222c24, 0.98).setOrigin(0).setStrokeStyle(2, 0x5a705e));
+    parent.add(this.add.text(slot2X + 70, slotY + 16, '兵刃核心字', { fontSize: '13px', color: '#889888' }).setOrigin(0.5));
+    const slot2Text = this.add.text(slot2X + 70, slotY + 75, this.selectedCoreWord || '未选', {
+      fontFamily: 'serif', fontSize: '44px', color: this.selectedCoreWord ? '#f0dfb3' : '#506052',
+    }).setOrigin(0.5);
+    (this as any).forgeSlot2Text = slot2Text;
+    parent.add(slot2Text);
+
+    // Arrow
+    parent.add(this.add.text(slot2X + 165, slotY + 70, '➔', {
+      fontSize: '28px', color: '#c0a87a',
+    }).setOrigin(0.5));
+
+    // Forge Preview Card
+    const previewX = slot2X + 195;
+    this.forgePreviewCard = this.add.container(previewX, slotY);
+    parent.add(this.forgePreviewCard);
+    this.updateForgePreview();
+
+    // Selectable Word Buttons below
+    parent.add(this.add.text(48, 395, '选择放入的字 (点击下方已解锁字):', {
+      fontSize: '14px', color: '#cbd5e1',
+    }));
+
+    const wordSelector = this.add.container(48, 425);
+    (this as any).forgeWordSelector = wordSelector;
+    parent.add(wordSelector);
+    this.refreshForgeWordSelector();
+
+    // Unlocked Weapons Shelf below
+    parent.add(this.add.text(48, 510, '已锻造词组武器库 (点击直接装备出征):', {
+      fontSize: '14px', color: '#cbd5e1',
+    }));
+
+    const weaponShelf = this.add.container(48, 540);
+    (this as any).forgeWeaponShelf = weaponShelf;
+    parent.add(weaponShelf);
+    this.refreshWeaponShelf();
+  }
+
+  private refreshForgeUI(): void {
+    this.refreshForgeWordSelector();
+    this.refreshWeaponShelf();
+    this.updateForgePreview();
+  }
+
+  private refreshForgeWordSelector(): void {
+    const container = (this as any).forgeWordSelector as Phaser.GameObjects.Container | undefined;
+    if (!container) return;
+    container.removeAll(true);
+
+    const unlocked = gameState.meta.unlockedWords;
+    unlocked.forEach((wordId, index) => {
+      const def = WORDS[wordId];
+      const x = (index % 8) * 85;
+      const y = Math.floor(index / 8) * 44;
+
+      const isPrefix = def.type === '属性字';
+      const isCore = def.type === '兵刃字';
+
+      const isSelected = this.selectedPrefixWord === wordId || this.selectedCoreWord === wordId;
+
+      const btn = this.add.text(x, y, `${def.name} (${def.type[0]})`, {
+        fontFamily: 'serif',
+        fontSize: '15px',
+        color: isSelected ? '#ffffff' : '#f0e8d5',
+        backgroundColor: isSelected ? '#c09848' : isPrefix ? '#2c3e2e' : isCore ? '#3e2c2c' : '#283029',
+        padding: { x: 10, y: 6 },
+      }).setOrigin(0).setInteractive({ useHandCursor: true });
+
+      btn.on('pointerdown', () => {
+        if (isPrefix) {
+          this.selectedPrefixWord = this.selectedPrefixWord === wordId ? undefined : wordId;
+        } else if (isCore) {
+          this.selectedCoreWord = this.selectedCoreWord === wordId ? undefined : wordId;
+        } else {
+          // General word, assign to prefix if empty, otherwise core
+          if (!this.selectedPrefixWord) this.selectedPrefixWord = wordId;
+          else this.selectedCoreWord = wordId;
+        }
+        this.updateForgePreview();
+        this.refreshForgeWordSelector();
+      });
+
+      container.add(btn);
+    });
+  }
+
+  private updateForgePreview(): void {
+    const card = this.forgePreviewCard;
+    if (!card) return;
+    card.removeAll(true);
+
+    const slot1Text = (this as any).forgeSlot1Text as Phaser.GameObjects.Text | undefined;
+    const slot2Text = (this as any).forgeSlot2Text as Phaser.GameObjects.Text | undefined;
+    if (slot1Text) slot1Text.setText(this.selectedPrefixWord || '未选').setColor(this.selectedPrefixWord ? '#f0dfb3' : '#506052');
+    if (slot2Text) slot2Text.setText(this.selectedCoreWord || '未选').setColor(this.selectedCoreWord ? '#f0dfb3' : '#506052');
+
+    // Background card
+    card.add(this.add.rectangle(0, 0, 240, 140, 0x242e26, 0.98).setOrigin(0).setStrokeStyle(2, 0x78907b));
+
+    if (this.selectedPrefixWord && this.selectedCoreWord) {
+      const weaponId = gameState.canForgeWeapon(this.selectedPrefixWord, this.selectedCoreWord);
+      if (weaponId) {
+        const weapon = COMPOUND_WEAPONS[weaponId];
+        card.add(this.add.text(18, 14, `【${weapon.name}】`, {
+          fontFamily: 'serif', fontSize: '20px', color: '#f7e7c4', fontStyle: 'bold',
+        }));
+        card.add(this.add.text(18, 42, weapon.summary, {
+          fontSize: '12px', color: '#b2c2af', wordWrap: { width: 204 }, lineSpacing: 4,
+        }));
+
+        const isEquipped = gameState.meta.equippedWeapon === weaponId;
+        const forgeBtn = this.add.text(120, 114, isEquipped ? '✓ 已装备出征' : '锻造并装备', {
+          fontSize: '13px',
+          color: isEquipped ? '#6e806d' : '#1e180d',
+          backgroundColor: isEquipped ? '#38463a' : '#d2a74c',
+          padding: { x: 18, y: 6 },
+        }).setOrigin(0.5).setInteractive({ useHandCursor: !isEquipped });
+
+        if (!isEquipped) {
+          forgeBtn.on('pointerdown', () => {
+            gameState.forgeWeapon(this.selectedPrefixWord!, this.selectedCoreWord!);
+            this.showFloatingNotice(`⚔️ 锻造成功！【${weapon.name}】已作为当前出征武器！`);
+            this.updateForgePreview();
+            this.refreshWeaponShelf();
+            this.updateExpeditionWeaponBadge();
+          });
+        }
+
+        card.add(forgeBtn);
+        return;
+      }
+    }
+
+    // Default empty card state
+    card.add(this.add.text(120, 50, '未组合成武器\n请在左侧选入两字', {
+      fontSize: '13px', color: '#728070', align: 'center', lineSpacing: 6,
+    }).setOrigin(0.5));
+  }
+
+  private refreshWeaponShelf(): void {
+    const shelf = (this as any).forgeWeaponShelf as Phaser.GameObjects.Container | undefined;
+    if (!shelf) return;
+    shelf.removeAll(true);
+
+    const unlocked = gameState.meta.unlockedWeapons;
+    unlocked.forEach((wId, index) => {
+      const weapon = COMPOUND_WEAPONS[wId];
+      const x = index * 160;
+      const isEquipped = gameState.meta.equippedWeapon === wId;
+
+      const card = this.add.container(x, 0);
+      card.add(this.add.rectangle(0, 0, 150, 78, isEquipped ? 0x364839 : 0x1f2621, 0.95)
+        .setOrigin(0)
+        .setStrokeStyle(1.5, isEquipped ? 0xd0b466 : 0x48584a)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => {
+          gameState.equipWeapon(wId);
+          this.showFloatingNotice(`已切换出征武器：【${weapon.name}】`);
+          this.refreshWeaponShelf();
+          this.updateForgePreview();
+          this.updateExpeditionWeaponBadge();
+        }));
+
+      card.add(this.add.text(12, 10, weapon.name, {
+        fontFamily: 'serif', fontSize: '16px', color: isEquipped ? '#fff' : '#e2d8c3', fontStyle: 'bold',
+      }));
+
+      card.add(this.add.text(12, 34, `伤害 ${weapon.stats.damage} · 攻速 ${weapon.stats.attackSpeed}x`, {
+        fontSize: '11px', color: '#97a695',
+      }));
+
+      card.add(this.add.text(12, 54, isEquipped ? '✓ 当前出征' : '点击装备', {
+        fontSize: '11px', color: isEquipped ? '#f0dfb3' : '#6b7a69',
+      }));
+
+      shelf.add(card);
+    });
+  }
+
+  // --- 4. 出征关口 (Expedition Gate) ---
+
   private drawExpeditionGate(): void {
-    this.add.rectangle(808, 354, 166, 226, 0x27322b, 0.98).setOrigin(0).setStrokeStyle(2, 0x9a8157);
-    this.add.text(891, 378, '关', { fontFamily: 'serif', fontSize: '62px', color: '#e6d3a2' }).setOrigin(0.5, 0);
-    this.add.text(891, 458, '三域试炼', { fontFamily: 'serif', fontSize: '21px', color: '#f1eee3' }).setOrigin(0.5);
-    this.add.text(891, 491, `通关 ${gameState.meta.victories} 次`, { fontSize: '14px', color: '#aeb9ae' }).setOrigin(0.5);
-    const start = this.add.text(891, 544, '出 征', {
-      fontSize: '19px', color: '#2d271d', backgroundColor: '#d5ba78', padding: { x: 24, y: 11 },
+    const gateX = 818;
+    const gateY = 160;
+
+    const gate = this.add.container(gateX, gateY);
+    gate.add(this.add.rectangle(0, 0, 158, 480, 0x222a23, 0.98).setOrigin(0).setStrokeStyle(2, 0x8a7751));
+
+    gate.add(this.add.text(79, 32, '关', {
+      fontFamily: 'serif', fontSize: '64px', color: '#e6d3a2',
+    }).setOrigin(0.5));
+
+    gate.add(this.add.text(79, 104, '三域出征', {
+      fontFamily: 'serif', fontSize: '18px', color: '#f1eee3',
+    }).setOrigin(0.5));
+
+    gate.add(this.add.text(79, 134, `通关 ${gameState.meta.victories} 次`, {
+      fontSize: '13px', color: '#aeb9ae',
+    }).setOrigin(0.5));
+
+    // Current equipped weapon badge
+    const badge = this.add.text(79, 210, '', {
+      fontFamily: 'serif', fontSize: '15px', color: '#f2dfb5', align: 'center', wordWrap: { width: 130 }, lineSpacing: 4,
+    }).setOrigin(0.5);
+    (this as any).expeditionWeaponBadge = badge;
+    gate.add(badge);
+    this.updateExpeditionWeaponBadge();
+
+    // Start expedition button
+    const startBtn = this.add.text(79, 410, '出 征', {
+      fontFamily: 'serif',
+      fontSize: '22px',
+      color: '#241e15',
+      backgroundColor: '#d8be7c',
+      padding: { x: 26, y: 12 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    start.on('pointerover', () => start.setBackgroundColor('#ead394'));
-    start.on('pointerout', () => start.setBackgroundColor('#d5ba78'));
-    start.on('pointerdown', () => {
+
+    startBtn.on('pointerover', () => startBtn.setBackgroundColor('#eed79b'));
+    startBtn.on('pointerout', () => startBtn.setBackgroundColor('#d8be7c'));
+    startBtn.on('pointerdown', () => {
       gameState.startExpedition();
       this.scene.start('Route');
+    });
+
+    gate.add(startBtn);
+  }
+
+  private updateExpeditionWeaponBadge(): void {
+    const badge = (this as any).expeditionWeaponBadge as Phaser.GameObjects.Text | undefined;
+    if (badge) {
+      const weapon = gameState.getEquippedWeapon();
+      badge.setText(`当前佩武：\n【${weapon.name}】\n(${weapon.type === 'ranged' ? '远程' : weapon.type === 'defense' ? '防守' : '近战'})`);
+    }
+  }
+
+  // --- UI Helpers ---
+
+  private refreshInventoryUI(): void {
+    STROKES.forEach((s) => {
+      if (this.inventoryTexts[s]) {
+        this.inventoryTexts[s].setText(`${gameState.meta.inventory[s]}`);
+      }
+    });
+  }
+
+  private showFloatingNotice(text: string): void {
+    const notice = this.add.text(512, 110, text, {
+      fontFamily: 'serif',
+      fontSize: '17px',
+      color: '#ffffff',
+      backgroundColor: '#6b4e28',
+      padding: { x: 24, y: 10 },
+    }).setOrigin(0.5).setDepth(100);
+
+    this.tweens.add({
+      targets: notice,
+      y: 90,
+      alpha: 0,
+      duration: 2600,
+      ease: 'Power2',
+      onComplete: () => notice.destroy(),
     });
   }
 
   private drawSettlement(settlement: Settlement): void {
     const title = settlement.outcome === 'victory' ? '凯旋归营' : settlement.outcome === 'retreat' ? '携墨归营' : '败退归营';
     const keptTotal = gameState.inventoryTotal(settlement.kept);
-    const veil = this.add.rectangle(512, 384, 1024, 768, 0x111712, 0.66).setDepth(20);
-    const panel = this.add.container(512, 384).setDepth(21);
-    panel.add(this.add.rectangle(0, 0, 470, 260, 0xe8e1ce, 1).setStrokeStyle(3, 0x765b3f));
-    panel.add(this.add.text(0, -88, title, { fontFamily: 'serif', fontSize: '36px', color: '#352d24' }).setOrigin(0.5));
-    panel.add(this.add.text(0, -30, `抵达第 ${settlement.areaReached} 区域`, { fontSize: '16px', color: '#645b50' }).setOrigin(0.5));
-    panel.add(this.add.text(0, 4, `带回笔画 ${keptTotal} 枚${settlement.lost ? ` · 遗失 ${settlement.lost} 枚` : ''}`, { fontSize: '18px', color: '#594329' }).setOrigin(0.5));
-    const close = this.add.text(0, 74, '收 入 仓 中', { fontSize: '17px', color: '#f5ead1', backgroundColor: '#684d35', padding: { x: 22, y: 10 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    close.on('pointerdown', () => { panel.destroy(); veil.destroy(); });
+    const veil = this.add.rectangle(512, 384, 1024, 768, 0x111712, 0.72).setDepth(200);
+    const panel = this.add.container(512, 384).setDepth(201);
+    panel.add(this.add.rectangle(0, 0, 480, 270, 0xe8e1ce, 1).setStrokeStyle(3, 0x765b3f));
+    panel.add(this.add.text(0, -90, title, { fontFamily: 'serif', fontSize: '36px', color: '#352d24' }).setOrigin(0.5));
+    panel.add(this.add.text(0, -32, `抵达第 ${settlement.areaReached} 区域`, { fontSize: '16px', color: '#645b50' }).setOrigin(0.5));
+    panel.add(this.add.text(0, 8, `带回笔画 ${keptTotal} 枚${settlement.lost ? ` · 遗失 ${settlement.lost} 枚` : ''}`, { fontSize: '18px', color: '#594329' }).setOrigin(0.5));
+    const close = this.add.text(0, 78, '收 入 仓 中', {
+      fontSize: '17px', color: '#f5ead1', backgroundColor: '#684d35', padding: { x: 24, y: 10 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    close.on('pointerdown', () => {
+      panel.destroy();
+      veil.destroy();
+      this.refreshInventoryUI();
+    });
     panel.add(close);
   }
 }

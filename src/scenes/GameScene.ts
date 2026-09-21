@@ -235,19 +235,62 @@ export class GameScene extends Phaser.Scene {
     const attackSide = horizontalOffset < -20 ? 'left' : horizontalOffset > 20 ? 'right' : this.character.facing;
     const attackAngle = attackSide === 'right' ? 0 : Math.PI;
     if (this.encounterCleared || this.ended || this.paused || !this.character.startAttack(attackAngle)) return;
+
+    const weapon = gameState.getEquippedWeapon();
+    if (weapon.type === 'ranged') {
+      // Fire ranged arrow
+      const aimDir = new Phaser.Math.Vector2(Math.cos(this.aimAngle), Math.sin(this.aimAngle)).normalize();
+      const speed = weapon.stats.projectileSpeed || 600;
+      const velocity = aimDir.clone().scale(speed);
+      const isFire = weapon.stats.element === 'fire';
+
+      const body = this.add.container(this.player.x + aimDir.x * 24, this.player.y + aimDir.y * 24).setDepth(7);
+      body.add(this.add.circle(0, 0, isFire ? 14 : 9, isFire ? 0xe2532f : 0x7eb86c, 0.45));
+      body.add(this.add.text(0, 0, isFire ? '矢' : '箭', {
+        fontFamily: 'serif',
+        fontSize: isFire ? '18px' : '15px',
+        color: isFire ? '#ffe680' : '#ebf5e8',
+      }).setOrigin(0.5));
+
+      this.projectiles.push({
+        body,
+        velocity,
+        hostile: false,
+        damage: weapon.stats.damage,
+        ttl: 1200,
+      });
+    }
   }
 
   private resolveMeleeHit(attack: AttackEvent): void {
+    const weapon = gameState.getEquippedWeapon();
     const attackSpec = KNIFE_COMBO.attacks[attack.comboStep - 1];
     const attackAngle = attack.side === 'right' ? 0 : Math.PI;
+
+    const range = weapon.stats.range * (attackSpec.range / 105);
+    const damage = Math.round(weapon.stats.damage * (attack.comboStep === 3 ? 1.6 : attack.comboStep === 2 ? 1.2 : 1.0));
+    const knockback = weapon.stats.knockback * (attackSpec.knockback / 14);
+
     const hits = this.enemies.filter((enemy) => {
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
       const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
-      return distance < attackSpec.range
+      return distance < range
         && Math.abs(Phaser.Math.Angle.Wrap(angle - attackAngle)) < Phaser.Math.DegToRad(attackSpec.arcDegrees / 2);
     });
-    hits.forEach((enemy) => this.damageEnemy(enemy, attackSpec.damage, attackAngle, attackSpec.knockback));
-    if (attack.comboStep === 3 && hits.length > 0) this.cameras.main.shake(80, 0.0025);
+
+    hits.forEach((enemy) => {
+      this.damageEnemy(enemy, damage, attackAngle, knockback);
+      if (weapon.stats.element === 'fire') {
+        this.damageEnemy(enemy, Math.round(damage * 0.35), attackAngle, 4);
+        const burst = this.add.circle(enemy.body.x, enemy.body.y, 22, 0xe84a22, 0.5).setDepth(8);
+        this.tweens.add({ targets: burst, alpha: 0, scale: 1.8, duration: 240, onComplete: () => burst.destroy() });
+      } else if (weapon.stats.element === 'earth') {
+        enemy.stateTimer += 700;
+        enemy.attackCooldown += 700;
+      }
+    });
+
+    if (attack.comboStep === 3 && hits.length > 0) this.cameras.main.shake(80, 0.003);
   }
 
   private updateKnifeTrail(delta: number): void {
@@ -273,13 +316,20 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.knifeTrail.clear();
+    const weapon = gameState.getEquippedWeapon();
+    const trailColor =
+      weapon.stats.element === 'fire' ? 0xdf4a28 :
+      weapon.stats.element === 'wood' ? 0x48b868 :
+      weapon.stats.element === 'metal' ? 0xf0d060 :
+      weapon.stats.element === 'earth' ? 0x9e7b50 : 0x34443a;
+
     for (let index = 1; index < this.knifeTrailPoints.length; index += 1) {
       const from = this.knifeTrailPoints[index - 1];
       const to = this.knifeTrailPoints[index];
       if (from.comboStep !== to.comboStep || from.side !== to.side) continue;
       const life = 1 - to.age / 140;
       const width = to.comboStep === 3 ? 7 : to.comboStep === 2 ? 4 : 5;
-      this.knifeTrail.lineStyle(Math.max(1, width * life), 0x34443a, 0.48 * life);
+      this.knifeTrail.lineStyle(Math.max(1, width * life), trailColor, 0.65 * life);
       this.knifeTrail.lineBetween(from.x, from.y, to.x, to.y);
     }
     this.knifeTrail.setData('pointCount', this.knifeTrailPoints.length);
@@ -508,7 +558,9 @@ export class GameScene extends Phaser.Scene {
 
   private takeDamage(rawDamage: number, incomingAngle = 0): void {
     if (this.time.now < this.invulnerableUntil || this.ended) return;
-    const damage = Math.ceil(rawDamage * (gameState.hasWord('盾') ? 0.65 : 1));
+    const weapon = gameState.getEquippedWeapon();
+    const defenseMultiplier = weapon.type === 'defense' ? 0.55 : gameState.hasWord('盾') ? 0.65 : 1;
+    const damage = Math.ceil(rawDamage * defenseMultiplier);
     this.hp = Math.max(0, this.hp - damage);
     this.invulnerableUntil = this.time.now + 520;
     this.character.startHurt(incomingAngle);
@@ -640,13 +692,14 @@ export class GameScene extends Phaser.Scene {
   private refreshHud(): void {
     const run = gameState.expedition;
     const carried = run ? gameState.inventoryTotal(run.carried) : 0;
+    const weapon = gameState.getEquippedWeapon();
     this.hpFill?.setDisplaySize(176 * (this.hp / (run?.maxHp ?? 100)), 14);
-    this.hpText?.setText(`生命 ${this.hp}/${run?.maxHp ?? 100}${gameState.hasWord('盾') ? ' · 盾减伤 35%' : ''}`);
+    this.hpText?.setText(`生命 ${this.hp}/${run?.maxHp ?? 100}${weapon.type === 'defense' ? ' · 盾减伤 45%' : ''}`);
     this.enemyText?.setText(`字怪 ${this.enemies.length}`);
     this.lootText?.setText(`携带笔画 ${carried}`);
     const fire = gameState.hasWord('火') ? this.fireCooldown > 0 ? `火 ${Math.ceil(this.fireCooldown / 100) / 10}s` : '火 就绪' : '火 未合成';
     const dodge = this.dodgeCooldown > 0 ? `闪避 ${Math.ceil(this.dodgeCooldown / 100) / 10}s` : '闪避 就绪';
-    this.abilityText?.setText(`${gameState.meta.equippedWords.join(' · ')}\n${fire}  |  ${dodge}`);
+    this.abilityText?.setText(`佩武：【${weapon.name}】(${weapon.summary})\n${fire}  |  ${dodge}`);
   }
 
   update(_time: number, delta: number): void {

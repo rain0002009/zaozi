@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { RIG_TEXTURE_KEYS } from '../entities/CharacterRig';
+import { handwritingService } from '../services/HandwritingService';
 
 export class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
@@ -9,10 +9,11 @@ export class BootScene extends Phaser.Scene {
     this.add.text(512, 384, '加载中...', {
       fontSize: '24px', color: '#ffffff'
     }).setOrigin(0.5);
-    RIG_TEXTURE_KEYS.forEach((key) => this.load.image(key, `/assets/characters/ren/source/${key}.png`));
   }
 
   create(): void {
+    // Start handwriting service initialization in background
+    handwritingService.init();
     this.scene.start('Menu');
   }
 }

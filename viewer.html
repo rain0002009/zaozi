@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>水墨土豆人·程序化弹性动作检视器 | Brotato Character Inspector</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: #0f111a;
+        color: #e2e8f0;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #app-container {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+      }
+      #viewport-pane {
+        flex: 1;
+        position: relative;
+        background: radial-gradient(circle at center, #1e2235 0%, #0d0f17 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      #canvas-wrapper {
+        position: relative;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        border: 1px solid #2d3748;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      #control-panel {
+        width: 380px;
+        background: #151824;
+        border-left: 1px solid #262c40;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        z-index: 10;
+      }
+      .panel-header {
+        padding: 16px 20px;
+        background: #1a1e2e;
+        border-bottom: 1px solid #262c40;
+      }
+      .panel-header h1 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #f8fafc;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .panel-header p {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-top: 4px;
+      }
+      .panel-section {
+        padding: 14px 20px;
+        border-bottom: 1px solid #202637;
+      }
+      .section-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748b;
+        margin-bottom: 10px;
+        font-weight: 700;
+      }
+      .btn-group {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #252b3d;
+        border: 1px solid #3b4258;
+        color: #e2e8f0;
+        padding: 6px 12px;
+        font-size: 13px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        flex: 1;
+        min-width: 80px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      button:hover {
+        background: #333a52;
+        border-color: #4a5568;
+      }
+      button.active {
+        background: #3b82f6;
+        border-color: #60a5fa;
+        color: #fff;
+        font-weight: 600;
+      }
+      .control-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-size: 13px;
+      }
+      .control-row label {
+        color: #cbd5e1;
+      }
+      .slider-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+        margin-left: 12px;
+      }
+      input[type="range"] {
+        flex: 1;
+        accent-color: #3b82f6;
+        cursor: pointer;
+      }
+      .value-badge {
+        font-family: monospace;
+        font-size: 12px;
+        background: #0f121d;
+        padding: 2px 6px;
+        border-radius: 4px;
+        min-width: 46px;
+        text-align: right;
+        color: #93c5fd;
+      }
+      .checkbox-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .checkbox-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #cbd5e1;
+        cursor: pointer;
+      }
+      .status-box {
+        background: #0d101a;
+        border: 1px solid #1f2538;
+        border-radius: 6px;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 11px;
+        line-height: 1.7;
+        color: #a5b4fc;
+      }
+      .status-line {
+        display: flex;
+        justify-content: space-between;
+      }
+      .status-value {
+        color: #38bdf8;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-container">
+      <div id="viewport-pane">
+        <div id="canvas-wrapper"></div>
+      </div>
+      <div id="control-panel">
+        <div class="panel-header">
+          <h1>🥔 水墨土豆人·弹性动作检视器</h1>
+          <p>Brotato-style Procedural Squash & Stretch Inspector</p>
+        </div>
+
+        <!-- 动作与连招切换 -->
+        <div class="panel-section">
+          <div class="section-title">动作与连招测试</div>
+          <div class="btn-group">
+            <button id="btn-act-idle" class="active">待机呼吸 (Idle)</button>
+            <button id="btn-act-walk">摇摆走跑 (Walk)</button>
+          </div>
+          <div class="btn-group">
+            <button id="btn-act-atk1">一段突刺 (Thrust)</button>
+            <button id="btn-act-atk2">二段横斩 (Slash)</button>
+            <button id="btn-act-atk3">三段升龙 (Leap)</button>
+          </div>
+          <div class="btn-group">
+            <button id="btn-act-dodge">战术滑步 (Dodge)</button>
+            <button id="btn-act-hurt">受击震颤 (Hurt)</button>
+          </div>
+        </div>
+
+        <!-- 播放控制与朝向 -->
+        <div class="panel-section">
+          <div class="section-title">播放与朝向</div>
+          <div class="btn-group">
+            <button id="btn-play-pause" class="active">⏸ 暂停</button>
+            <button id="btn-facing-right" class="active">面向右侧</button>
+            <button id="btn-facing-left">面向左侧</button>
+          </div>
+          <div class="control-row">
+            <label>播放速度</label>
+            <div class="slider-container">
+              <input id="slider-speed" type="range" min="0.2" max="2.0" step="0.05" value="1.0" />
+              <span id="speed-val" class="value-badge">1.0x</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 土豆弹性与动力学参数 -->
+        <div class="panel-section">
+          <div class="section-title">土豆兄弟弹性动力学微调</div>
+          <div class="control-row">
+            <label>摇摆倾角</label>
+            <div class="slider-container">
+              <input id="slider-waddle-tilt" type="range" min="0" max="20" step="1" value="9" />
+              <span id="waddle-tilt-val" class="value-badge">9°</span>
+            </div>
+          </div>
+          <div class="control-row">
+            <label>弹跳高度</label>
+            <div class="slider-container">
+              <input id="slider-bounce-height" type="range" min="0" max="25" step="1" value="12" />
+              <span id="bounce-height-val" class="value-badge">12px</span>
+            </div>
+          </div>
+          <div class="control-row">
+            <label>步伐形变</label>
+            <div class="slider-container">
+              <input id="slider-squash-amount" type="range" min="0" max="0.20" step="0.01" value="0.08" />
+              <span id="squash-amount-val" class="value-badge">8%</span>
+            </div>
+          </div>
+          <div class="control-row">
+            <label>呼吸幅度</label>
+            <div class="slider-container">
+              <input id="slider-breath-amount" type="range" min="0" max="0.10" step="0.005" value="0.04" />
+              <span id="breath-amount-val" class="value-badge">4%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视口与辅助线 -->
+        <div class="panel-section">
+          <div class="section-title">视口与辅助线</div>
+          <div class="btn-group">
+            <button id="btn-zoom-1">1x 原始</button>
+            <button id="btn-zoom-2" class="active">2x 放大</button>
+            <button id="btn-zoom-4">4x 特写</button>
+          </div>
+          <div class="checkbox-grid">
+            <label class="checkbox-item">
+              <input id="chk-ground" type="checkbox" checked /> 地面基准线
+            </label>
+            <label class="checkbox-item">
+              <input id="chk-grid" type="checkbox" checked /> 坐标网格
+            </label>
+            <label class="checkbox-item">
+              <input id="chk-shadow" type="checkbox" checked /> 角色动态阴影
+            </label>
+          </div>
+        </div>
+
+        <!-- 实时动力学状态 -->
+        <div class="panel-section" style="border-bottom: none;">
+          <div class="section-title">实时动力学状态</div>
+          <div id="status-box" class="status-box">
+            <div class="status-line"><span>当前动作：</span><span id="st-action" class="status-value">待机呼吸 (Idle)</span></div>
+            <div class="status-line"><span>身体倾角：</span><span id="st-angle" class="status-value">0.0°</span></div>
+            <div class="status-line"><span>弹性缩放：</span><span id="st-scale" class="status-value">1.00x, 1.00x</span></div>
+            <div class="status-line"><span>跳跃高度：</span><span id="st-bounce" class="status-value">0.0 px</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/viewer/main.ts"></script>
+  </body>
+</html>
