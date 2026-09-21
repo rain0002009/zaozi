@@ -2,9 +2,7 @@ import Phaser from 'phaser';
 import {
   AttackSide,
   KNIFE_COMBO,
-  NEUTRAL_WEAPON_POSE,
   WeaponAttack,
-  WeaponPose,
 } from '../combat/WeaponCombo';
 import {
   createNeutralRigPose,
@@ -29,6 +27,7 @@ export type RigSnapshot = {
   parts: { name: RigPartName; textureKey: string }[];
   connectionErrors: RigConnectionErrors;
   gait: {
+    action: CharacterMotionPose['action'];
     phase: number;
     supportFoot: CharacterMotionPose['supportFoot'];
     travel: CharacterMotionPose['travel'];
@@ -111,21 +110,6 @@ const createLegChain = (sprites: RigSprites, definition: LegDefinition): LegChai
   bendDirection: definition.bendDirection,
 });
 
-const copyPose = (pose: WeaponPose): WeaponPose => ({ ...pose });
-
-const interpolatePose = (from: WeaponPose, to: WeaponPose, progress: number): WeaponPose => ({
-  bodyY: Phaser.Math.Linear(from.bodyY, to.bodyY, progress),
-  torsoAngle: Phaser.Math.Linear(from.torsoAngle, to.torsoAngle, progress),
-  shoulderX: Phaser.Math.Linear(from.shoulderX, to.shoulderX, progress),
-  shoulderY: Phaser.Math.Linear(from.shoulderY, to.shoulderY, progress),
-  upperArmAngle: Phaser.Math.Linear(from.upperArmAngle, to.upperArmAngle, progress),
-  forearmAngle: Phaser.Math.Linear(from.forearmAngle, to.forearmAngle, progress),
-  bladeAngle: Phaser.Math.Linear(from.bladeAngle, to.bladeAngle, progress),
-  rearArmAngle: Phaser.Math.Linear(from.rearArmAngle, to.rearArmAngle, progress),
-  rearLegAngle: Phaser.Math.Linear(from.rearLegAngle, to.rearLegAngle, progress),
-  frontLegAngle: Phaser.Math.Linear(from.frontLegAngle, to.frontLegAngle, progress),
-});
-
 const local = (point: Phaser.Math.Vector2): Phaser.Math.Vector2 => point.clone().subtract(ROOT);
 
 export class PlayerCharacter {
@@ -143,8 +127,6 @@ export class PlayerCharacter {
   private hurtAngle = 0;
   private readonly motion = new CharacterMotion();
   private motionPose: CharacterMotionPose;
-  private currentWeaponPose = copyPose(NEUTRAL_WEAPON_POSE);
-  private attackStartPose = copyPose(NEUTRAL_WEAPON_POSE);
   private readonly rig: RigSprites;
   private readonly rearLeg: LegChain;
   private readonly frontLeg: LegChain;
@@ -258,6 +240,7 @@ export class PlayerCharacter {
       parts: RIG_PARTS.map((part) => ({ name: part.name, textureKey: this.rig[part.name].texture.key })),
       connectionErrors,
       gait: {
+        action: this.motionPose.action,
         phase: this.motionPose.phase,
         supportFoot: this.motionPose.supportFoot,
         travel: this.motionPose.travel,
@@ -281,7 +264,6 @@ export class PlayerCharacter {
       : 1;
     this.action = 'attack';
     this.actionElapsed = 0;
-    this.attackStartPose = copyPose(this.currentWeaponPose);
     this.facing = Math.cos(angle) < 0 ? 'left' : 'right';
     this.attackHitSent = false;
     this.queuedAttackAngle = undefined;
@@ -333,13 +315,10 @@ export class PlayerCharacter {
         attackEvent = { comboStep: this.comboStep, side: this.facing };
       }
       if (this.actionElapsed >= this.attackSpec.duration) {
-        const completedAttack = this.attackSpec;
-        this.currentWeaponPose = this.attackPoseAt(completedAttack, completedAttack.duration);
         if (this.queuedAttackAngle !== undefined) {
           const queuedAngle = this.queuedAttackAngle;
           this.comboStep = this.comboStep % KNIFE_COMBO.attacks.length + 1;
           this.actionElapsed = 0;
-          this.attackStartPose = copyPose(this.currentWeaponPose);
           this.facing = Math.cos(queuedAngle) < 0 ? 'left' : 'right';
           this.attackHitSent = false;
           this.queuedAttackAngle = undefined;
@@ -354,12 +333,19 @@ export class PlayerCharacter {
       this.finishAction(movement);
     }
 
-    const gaitDisplacement = this.action === 'move' ? displacement : Phaser.Math.Vector2.ZERO;
     this.motionPose = this.motion.advance({
       elapsedMs: delta,
-      displacement: gaitDisplacement,
+      displacement,
       facing: this.facing,
       paused: false,
+      action: this.action === 'attack' ? {
+        type: 'attack',
+        name: this.attackSpec.motionName,
+        actionElapsedMs: this.actionElapsed,
+        activeAtMs: this.attackSpec.activeAt,
+        chainAtMs: this.attackSpec.chainAt,
+        durationMs: this.attackSpec.duration,
+      } : undefined,
     });
     this.pose(delta, movement, aimAngle);
     return attackEvent;
@@ -435,25 +421,6 @@ export class PlayerCharacter {
     footSprite.setPosition(anklePosition.x, anklePosition.y).setRotation(footRotation);
   }
 
-  private attackPoseAt(attack: WeaponAttack, elapsed: number): WeaponPose {
-    const windupAt = attack.activeAt * 0.48;
-    if (elapsed < windupAt) {
-      const progress = Phaser.Math.Easing.Sine.InOut(Phaser.Math.Clamp(elapsed / windupAt, 0, 1));
-      return interpolatePose(this.attackStartPose, attack.poses.windup, progress);
-    }
-    if (elapsed < attack.activeAt) {
-      const progress = Phaser.Math.Easing.Sine.InOut(
-        Phaser.Math.Clamp((elapsed - windupAt) / (attack.activeAt - windupAt), 0, 1),
-      );
-      return interpolatePose(attack.poses.windup, attack.poses.strike, progress);
-    }
-    if (elapsed < attack.chainAt) return copyPose(attack.poses.strike);
-    const progress = Phaser.Math.Easing.Cubic.Out(
-      Phaser.Math.Clamp((elapsed - attack.chainAt) / (attack.duration - attack.chainAt), 0, 1),
-    );
-    return interpolatePose(attack.poses.strike, attack.poses.recovery, progress);
-  }
-
   private pose(delta: number, movement: Phaser.Math.Vector2, _aimAngle: number): void {
     if (this.action === 'dead') return;
     const {
@@ -464,79 +431,73 @@ export class PlayerCharacter {
     const now = this.scene.time.now;
     const breath = Math.sin(now * Math.PI * 2 / 1200);
     const gaitActive = this.action === 'move' || this.action === 'idle';
-    const bob = gaitActive
+    const articulatedLegs = gaitActive || this.action === 'attack';
+    const bodyY = gaitActive
       ? this.motionPose.bodyY + breath * (1 - this.motionPose.activity) * 1.5
-      : breath * 0.4;
+      : this.action === 'attack' ? this.motionPose.bodyY : breath * 0.4;
+    let torsoAngle = this.motionPose.torsoAngle;
+    let rearArmAngle = this.motionPose.rearArmAngle;
+    let upperArmAngle = this.motionPose.upperArmAngle;
+    let forearmAngle = this.motionPose.forearmAngle;
+    let bladeAngle = this.motionPose.bladeAngle;
 
     const facingScale = this.facing === 'left' ? -1 : 1;
     this.visual.setScale(facingScale * 0.5, 0.5);
-    this.visual.setPosition(gaitActive ? facingScale * this.motionPose.bodyX : 0, bob);
+    this.visual.setPosition(articulatedLegs ? facingScale * this.motionPose.bodyX : 0, bodyY);
     this.visual.angle = 0;
-    this.shadow.setScale(1 - bob * 0.012, 1 - bob * 0.006);
+    this.shadow.setScale(1 - bodyY * 0.012, 1 - bodyY * 0.006);
 
-    const rearShoulder = local(REAR_SHOULDER);
     const torsoPivot = local(TORSO_PIVOT);
-    let weaponPose = interpolatePose(
-      this.currentWeaponPose,
-      NEUTRAL_WEAPON_POSE,
-      Math.min(1, this.action === 'attack' ? 0 : delta / 90),
-    );
-    if (this.action === 'attack') {
-      weaponPose = this.attackPoseAt(this.attackSpec, this.actionElapsed);
-      this.currentWeaponPose = copyPose(weaponPose);
-    } else if (this.action === 'dodge') {
+    if (this.action === 'dodge') {
       const progress = Phaser.Math.Clamp(this.actionElapsed / 260, 0, 1);
       const tuck = Math.sin(progress * Math.PI);
       this.visual.angle = Math.cos(this.lockedAimAngle) * tuck * 18;
       this.visual.setScale(facingScale * 0.5 * (1 + tuck * 0.08), 0.5 * (1 - tuck * 0.28));
       this.visual.y += tuck * 10;
-      weaponPose.upperArmAngle += 12 * tuck;
-      weaponPose.forearmAngle += 18 * tuck;
-      weaponPose.bladeAngle -= 35 * tuck;
+      upperArmAngle += 12 * tuck;
+      forearmAngle += 18 * tuck;
+      bladeAngle -= 35 * tuck;
     } else if (this.action === 'hurt') {
       const recoil = Math.sin((this.actionElapsed / 160) * Math.PI);
       this.visual.x = Math.cos(this.hurtAngle) * recoil * 12;
       this.visual.y += Math.sin(this.hurtAngle) * recoil * 8;
       this.visual.angle = Math.cos(this.hurtAngle) * recoil * 9;
-      weaponPose.upperArmAngle += 8 * recoil;
-      weaponPose.forearmAngle += 12 * recoil;
+      upperArmAngle += 8 * recoil;
+      forearmAngle += 12 * recoil;
     }
 
-    if (this.action !== 'attack') this.currentWeaponPose = copyPose(weaponPose);
-
-    if (gaitActive) {
-      this.poseGaitLeg(this.rearLeg, this.motionPose.feet.rear, bob);
-      this.poseGaitLeg(this.frontLeg, this.motionPose.feet.front, bob);
+    if (articulatedLegs) {
+      this.poseGaitLeg(this.rearLeg, this.motionPose.feet.rear, bodyY);
+      this.poseGaitLeg(this.frontLeg, this.motionPose.feet.front, bodyY);
     } else {
-      this.poseRigidLeg(this.rearLeg, weaponPose.rearLegAngle);
-      this.poseRigidLeg(this.frontLeg, weaponPose.frontLegAngle);
+      this.poseRigidLeg(this.rearLeg, 0);
+      this.poseRigidLeg(this.frontLeg, 0);
     }
-    rearArm.setPosition(rearShoulder.x, rearShoulder.y).setAngle(
-      this.motionPose.rearArmAngle + breath * (1 - this.motionPose.activity) + weaponPose.rearArmAngle,
-    );
     torso.setPosition(torsoPivot.x, torsoPivot.y).setAngle(
-      this.motionPose.torsoAngle + movement.x * this.motionPose.activity * 0.8 + weaponPose.torsoAngle,
+      torsoAngle + movement.x * this.motionPose.activity * 0.8,
     );
     garmentHem.setPosition(torso.x, torso.y).setRotation(torso.rotation);
-    this.visual.y += weaponPose.bodyY;
 
     const torsoRotation = torso.rotation;
+    const rearShoulder = local(REAR_SHOULDER).subtract(torsoPivot).rotate(torsoRotation).add(torsoPivot);
+    rearArm.setPosition(rearShoulder.x, rearShoulder.y).setRotation(
+      torsoRotation + Phaser.Math.DegToRad(rearArmAngle + breath * (1 - this.motionPose.activity)),
+    );
     const headPosition = local(HEAD_NECK).subtract(torsoPivot).rotate(torsoRotation).add(torsoPivot);
-    head.setPosition(headPosition.x, headPosition.y - bob * 0.2).setRotation(-torsoRotation * 0.25);
+    head.setPosition(headPosition.x, headPosition.y - bodyY * 0.2).setRotation(-torsoRotation * 0.25);
 
-    const shoulder = local(WEAPON_SHOULDER).subtract(torsoPivot).rotate(torsoRotation).add(torsoPivot)
-      .add(new Phaser.Math.Vector2(weaponPose.shoulderX, weaponPose.shoulderY));
-    const upperArmRotation = torsoRotation + Phaser.Math.DegToRad(weaponPose.upperArmAngle);
-    const forearmRotation = torsoRotation + Phaser.Math.DegToRad(weaponPose.forearmAngle);
+    const shoulder = local(WEAPON_SHOULDER).subtract(torsoPivot).rotate(torsoRotation).add(torsoPivot);
+    const upperArmRotation = torsoRotation + Phaser.Math.DegToRad(upperArmAngle);
+    const forearmRotation = torsoRotation + Phaser.Math.DegToRad(forearmAngle);
     const shoulderAngle = UPPER_NEUTRAL + upperArmRotation;
     const elbow = shoulder.clone().add(
       new Phaser.Math.Vector2(Math.cos(shoulderAngle), Math.sin(shoulderAngle)).scale(UPPER_LENGTH),
     );
-    const forearmAngle = FOREARM_NEUTRAL + forearmRotation;
+    const forearmChainAngle = FOREARM_NEUTRAL + forearmRotation;
     const wrist = elbow.clone().add(
-      new Phaser.Math.Vector2(Math.cos(forearmAngle), Math.sin(forearmAngle)).scale(FOREARM_LENGTH),
+      new Phaser.Math.Vector2(Math.cos(forearmChainAngle), Math.sin(forearmChainAngle)).scale(FOREARM_LENGTH),
     );
-    const knifeRotation = Phaser.Math.DegToRad(weaponPose.bladeAngle);
+    const knifeRotation = Phaser.Math.DegToRad(bladeAngle);
     const gripOffset = GRIP_FROM_WRIST.clone().rotate(knifeRotation);
 
     weaponUpperArm.setPosition(shoulder.x, shoulder.y).setRotation(upperArmRotation);

@@ -1,4 +1,4 @@
-import type { AttackSide } from '../combat/WeaponCombo';
+import type { AttackMotionName, AttackSide } from '../combat/WeaponCombo';
 
 export type MotionPoint = { x: number; y: number };
 
@@ -7,9 +7,20 @@ export type CharacterMotionInput = {
   displacement: MotionPoint;
   facing: AttackSide;
   paused: boolean;
+  action?: CharacterMotionAction;
+};
+
+export type CharacterMotionAction = {
+  type: 'attack';
+  name: AttackMotionName;
+  actionElapsedMs: number;
+  activeAtMs: number;
+  chainAtMs: number;
+  durationMs: number;
 };
 
 export type CharacterMotionPose = {
+  action: 'locomotion' | AttackMotionName;
   phase: number;
   supportFoot: SupportFoot;
   feet: Record<SupportFoot, FootMotion>;
@@ -20,6 +31,9 @@ export type CharacterMotionPose = {
   bodyY: number;
   torsoAngle: number;
   rearArmAngle: number;
+  upperArmAngle: number;
+  forearmAngle: number;
+  bladeAngle: number;
 };
 
 export type SupportFoot = 'front' | 'rear';
@@ -41,6 +55,153 @@ const BASE_SOLES: Record<SupportFoot, MotionPoint> = {
   front: { x: 10, y: 21.5 },
 };
 
+type AttackKeyPose = Pick<CharacterMotionPose,
+  | 'supportFoot' | 'feet' | 'bodyX' | 'bodyY' | 'torsoAngle' | 'rearArmAngle'
+  | 'upperArmAngle' | 'forearmAngle' | 'bladeAngle'>;
+
+type AttackPoseSet = { windup: AttackKeyPose; strike: AttackKeyPose; recovery: AttackKeyPose };
+
+const FIRST_ATTACK_POSES: AttackPoseSet = {
+  windup: {
+    supportFoot: 'front',
+    feet: {
+      front: { sole: { x: 12, y: 21.5 }, lift: 0, planted: true },
+      rear: { sole: { x: -8, y: 20 }, lift: 0, planted: false },
+    },
+    bodyX: 1,
+    bodyY: 1,
+    torsoAngle: -8,
+    rearArmAngle: 12,
+    upperArmAngle: -92,
+    forearmAngle: -132,
+    bladeAngle: -62,
+  },
+  strike: {
+    supportFoot: 'front',
+    feet: {
+      front: { sole: { x: 12, y: 21.5 }, lift: 0, planted: true },
+      rear: { sole: { x: 0, y: 20 }, lift: 0, planted: false },
+    },
+    bodyX: 5,
+    bodyY: 6,
+    torsoAngle: 10,
+    rearArmAngle: -14,
+    upperArmAngle: -72,
+    forearmAngle: -4,
+    bladeAngle: 55,
+  },
+  recovery: {
+    supportFoot: 'front',
+    feet: {
+      front: { sole: { x: 12, y: 21.5 }, lift: 0, planted: true },
+      rear: { sole: { x: 2, y: 20 }, lift: 0, planted: false },
+    },
+    bodyX: 3,
+    bodyY: 3,
+    torsoAngle: 5,
+    rearArmAngle: -8,
+    upperArmAngle: -66,
+    forearmAngle: 10,
+    bladeAngle: 58,
+  },
+};
+
+const SECOND_ATTACK_POSES: AttackPoseSet = {
+  windup: {
+    supportFoot: 'rear',
+    feet: {
+      front: { sole: { x: 13, y: 19.5 }, lift: 2.5, planted: false },
+      rear: { sole: { x: 0, y: 20 }, lift: 0, planted: true },
+    },
+    bodyX: 2,
+    bodyY: 3,
+    torsoAngle: 5,
+    rearArmAngle: -8,
+    upperArmAngle: -66,
+    forearmAngle: 10,
+    bladeAngle: 58,
+  },
+  strike: {
+    supportFoot: 'rear',
+    feet: {
+      front: { sole: { x: 8, y: 17 }, lift: 4.5, planted: false },
+      rear: { sole: { x: 0, y: 20 }, lift: 0, planted: true },
+    },
+    bodyX: -4,
+    bodyY: 2,
+    torsoAngle: -7,
+    rearArmAngle: 16,
+    upperArmAngle: -100,
+    forearmAngle: -122,
+    bladeAngle: -55,
+  },
+  recovery: {
+    supportFoot: 'rear',
+    feet: {
+      front: { sole: { x: 10, y: 19 }, lift: 2, planted: false },
+      rear: { sole: { x: 1, y: 20 }, lift: 0, planted: true },
+    },
+    bodyX: -2,
+    bodyY: 2,
+    torsoAngle: -10,
+    rearArmAngle: 18,
+    upperArmAngle: 58,
+    forearmAngle: 28,
+    bladeAngle: -38,
+  },
+};
+
+const THIRD_ATTACK_POSES: AttackPoseSet = {
+  windup: {
+    supportFoot: 'rear',
+    feet: {
+      front: { sole: { x: 8, y: 19 }, lift: 1, planted: false },
+      rear: { sole: { x: 0, y: 20 }, lift: 0, planted: true },
+    },
+    bodyX: -2,
+    bodyY: 2,
+    torsoAngle: -12,
+    rearArmAngle: 22,
+    upperArmAngle: 62,
+    forearmAngle: 32,
+    bladeAngle: -42,
+  },
+  strike: {
+    supportFoot: 'front',
+    feet: {
+      front: { sole: { x: 26, y: 21.5 }, lift: 0, planted: true },
+      rear: { sole: { x: 12, y: 20 }, lift: 3, planted: false },
+    },
+    bodyX: 8,
+    bodyY: 6,
+    torsoAngle: 14,
+    rearArmAngle: -24,
+    upperArmAngle: -104,
+    forearmAngle: -52,
+    bladeAngle: 5,
+  },
+  recovery: {
+    supportFoot: 'front',
+    feet: {
+      front: { sole: { x: 18, y: 21.5 }, lift: 0, planted: true },
+      rear: { sole: { x: 8, y: 20 }, lift: 1, planted: false },
+    },
+    bodyX: 2,
+    bodyY: 1,
+    torsoAngle: -6,
+    rearArmAngle: 10,
+    upperArmAngle: -86,
+    forearmAngle: -110,
+    bladeAngle: -55,
+  },
+};
+
+const ATTACK_POSES: Record<AttackMotionName, AttackPoseSet> = {
+  'knife-downward-slash': FIRST_ATTACK_POSES,
+  'knife-rising-cut': SECOND_ATTACK_POSES,
+  'knife-finisher-lunge': THIRD_ATTACK_POSES,
+};
+
 const smoothstep = (value: number): number => value * value * (3 - 2 * value);
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 const lerp = (from: number, to: number, progress: number): number => from + (to - from) * progress;
@@ -57,6 +218,34 @@ const blendDirection = (from: MotionPoint, to: MotionPoint, progress: number): M
   const angle = fromAngle + angleDelta * progress;
   return { x: Math.cos(angle), y: Math.sin(angle) };
 };
+
+const interpolateFoot = (from: FootMotion, to: FootMotion, progress: number): FootMotion => ({
+  sole: {
+    x: lerp(from.sole.x, to.sole.x, progress),
+    y: lerp(from.sole.y, to.sole.y, progress),
+  },
+  lift: lerp(from.lift, to.lift, progress),
+  planted: progress < 0.5 ? from.planted : to.planted,
+});
+
+const interpolateAttackPose = (
+  from: AttackKeyPose,
+  to: AttackKeyPose,
+  progress: number,
+): AttackKeyPose => ({
+  supportFoot: progress < 0.5 ? from.supportFoot : to.supportFoot,
+  feet: {
+    front: interpolateFoot(from.feet.front, to.feet.front, progress),
+    rear: interpolateFoot(from.feet.rear, to.feet.rear, progress),
+  },
+  bodyX: lerp(from.bodyX, to.bodyX, progress),
+  bodyY: lerp(from.bodyY, to.bodyY, progress),
+  torsoAngle: lerp(from.torsoAngle, to.torsoAngle, progress),
+  rearArmAngle: lerp(from.rearArmAngle, to.rearArmAngle, progress),
+  upperArmAngle: lerp(from.upperArmAngle, to.upperArmAngle, progress),
+  forearmAngle: lerp(from.forearmAngle, to.forearmAngle, progress),
+  bladeAngle: lerp(from.bladeAngle, to.bladeAngle, progress),
+});
 
 const classifyTravel = (direction: MotionPoint): TravelKind => {
   const horizontal = Math.abs(direction.x);
@@ -93,12 +282,16 @@ export class CharacterMotion {
     front: { ...BASE_SOLES.front },
   };
   private currentPose = this.createPose();
+  private activeAction: CharacterMotionPose['action'] = 'locomotion';
+  private attackStartPose: AttackKeyPose = this.currentPose;
+  private attackDisplacement: MotionPoint = { x: 0, y: 0 };
 
   advance(input: CharacterMotionInput): CharacterMotionPose {
     if (input.paused) return this.currentPose;
 
     const facingSign = input.facing === 'right' ? 1 : -1;
-    const localDisplacement = { x: input.displacement.x * facingSign, y: input.displacement.y };
+    const localInputDisplacement = { x: input.displacement.x * facingSign, y: input.displacement.y };
+    const localDisplacement = input.action ? { x: 0, y: 0 } : localInputDisplacement;
     const distance = Math.hypot(localDisplacement.x, localDisplacement.y);
     const wasStationary = this.activity === 0;
     if (distance <= 0.001 && this.travelling) {
@@ -151,8 +344,74 @@ export class CharacterMotion {
         });
       }
     }
-    this.currentPose = this.createPose();
+    const locomotionPose = this.createPose();
+    if (input.action?.type === 'attack') {
+      if (this.activeAction !== input.action.name) {
+        this.attackStartPose = this.currentPose;
+        this.attackDisplacement = { x: 0, y: 0 };
+      }
+      this.activeAction = input.action.name;
+      this.attackDisplacement = add(this.attackDisplacement, localInputDisplacement);
+      this.currentPose = this.createAttackPose(input.action);
+    } else {
+      this.activeAction = 'locomotion';
+      this.currentPose = locomotionPose;
+    }
     return this.currentPose;
+  }
+
+  private createAttackPose(action: CharacterMotionAction): CharacterMotionPose {
+    const poses = ATTACK_POSES[action.name];
+    const windupAt = action.activeAtMs * 0.48;
+    let pose: AttackKeyPose;
+    if (action.actionElapsedMs < windupAt) {
+      pose = interpolateAttackPose(
+        this.attackStartPose,
+        poses.windup,
+        smoothstep(clamp01(action.actionElapsedMs / windupAt)),
+      );
+    } else if (action.actionElapsedMs < action.activeAtMs) {
+      pose = interpolateAttackPose(
+        poses.windup,
+        poses.strike,
+        smoothstep(clamp01((action.actionElapsedMs - windupAt) / (action.activeAtMs - windupAt))),
+      );
+    } else if (action.actionElapsedMs < action.chainAtMs) {
+      pose = poses.strike;
+    } else {
+      pose = interpolateAttackPose(
+        poses.strike,
+        poses.recovery,
+        1 - (1 - clamp01(
+          (action.actionElapsedMs - action.chainAtMs) / (action.durationMs - action.chainAtMs),
+        )) ** 3,
+      );
+    }
+    return {
+      action: action.name,
+      phase: this.phase,
+      feet: {
+        front: {
+          ...pose.feet.front,
+          sole: subtract(pose.feet.front.sole, this.attackDisplacement),
+        },
+        rear: {
+          ...pose.feet.rear,
+          sole: subtract(pose.feet.rear.sole, this.attackDisplacement),
+        },
+      },
+      supportFoot: pose.supportFoot,
+      travel: 'stationary',
+      stride: { x: 0, y: 0 },
+      activity: 0,
+      bodyX: pose.bodyX,
+      bodyY: pose.bodyY,
+      torsoAngle: pose.torsoAngle,
+      rearArmAngle: pose.rearArmAngle,
+      upperArmAngle: pose.upperArmAngle,
+      forearmAngle: pose.forearmAngle,
+      bladeAngle: pose.bladeAngle,
+    };
   }
 
   private createPose(): CharacterMotionPose {
@@ -161,6 +420,7 @@ export class CharacterMotion {
     const supportSole = this.supportFoot === 'front' ? front.sole : rear.sole;
     const supportBase = BASE_SOLES[this.supportFoot];
     return {
+      action: 'locomotion',
       phase: this.phase,
       supportFoot: this.supportFoot,
       feet: { front, rear },
@@ -177,6 +437,9 @@ export class CharacterMotion {
         + Math.sin(this.phase * Math.PI * 2) * this.travelDirection.y * 0.8
       ) * this.activity,
       rearArmAngle: -Math.sin(this.phase * Math.PI * 2) * 11 * this.travelDirection.x * this.activity,
+      upperArmAngle: 0,
+      forearmAngle: 0,
+      bladeAngle: 0,
     };
   }
 
