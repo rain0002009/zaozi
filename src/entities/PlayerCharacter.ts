@@ -6,6 +6,15 @@ import {
   WeaponAttack,
   WeaponPose,
 } from '../combat/WeaponCombo';
+import {
+  createNeutralRigPose,
+  RIG_CONNECTIONS,
+  RIG_JOINTS,
+  RIG_PARTS,
+  RIG_ROOT,
+  RigConnectionErrors,
+  RigPartName,
+} from './CharacterRig';
 
 export type PlayerAction = 'idle' | 'move' | 'attack' | 'dodge' | 'hurt' | 'dead';
 
@@ -14,29 +23,38 @@ export type AttackEvent = {
   side: AttackSide;
 };
 
-type RigSprites = {
-  rearLeg: Phaser.GameObjects.Sprite;
-  rearArm: Phaser.GameObjects.Sprite;
-  torso: Phaser.GameObjects.Sprite;
-  head: Phaser.GameObjects.Sprite;
-  frontLeg: Phaser.GameObjects.Sprite;
-  weaponUpperArm: Phaser.GameObjects.Sprite;
-  weaponForearm: Phaser.GameObjects.Sprite;
-  weaponHand: Phaser.GameObjects.Sprite;
-  knife: Phaser.GameObjects.Sprite;
+export type RigSnapshot = {
+  parts: { name: RigPartName; textureKey: string }[];
+  connectionErrors: RigConnectionErrors;
 };
 
-const ROOT = new Phaser.Math.Vector2(128, 164);
-const TORSO_PIVOT = new Phaser.Math.Vector2(128, 135);
-const HEAD_NECK = new Phaser.Math.Vector2(123, 86);
-const REAR_HIP = new Phaser.Math.Vector2(124, 135);
-const FRONT_HIP = new Phaser.Math.Vector2(130, 135);
-const REAR_SHOULDER = new Phaser.Math.Vector2(121, 89);
-const WEAPON_SHOULDER = new Phaser.Math.Vector2(128, 89);
-const WEAPON_ELBOW = new Phaser.Math.Vector2(117, 114);
-const WEAPON_WRIST = new Phaser.Math.Vector2(126, 135);
-const WEAPON_GRIP = new Phaser.Math.Vector2(126, 138);
-const KNIFE_TIP = new Phaser.Math.Vector2(166, 138);
+type RigSprites = Record<RigPartName, Phaser.GameObjects.Sprite>;
+
+type LegChain = {
+  thigh: Phaser.GameObjects.Sprite;
+  shin: Phaser.GameObjects.Sprite;
+  foot: Phaser.GameObjects.Sprite;
+  hip: Phaser.Math.Vector2;
+  knee: Phaser.Math.Vector2;
+  ankle: Phaser.Math.Vector2;
+};
+
+const ROOT = new Phaser.Math.Vector2(RIG_ROOT.x, RIG_ROOT.y);
+const vector = (point: { x: number; y: number }): Phaser.Math.Vector2 => new Phaser.Math.Vector2(point.x, point.y);
+const TORSO_PIVOT = vector(RIG_JOINTS.torsoPivot);
+const HEAD_NECK = vector(RIG_JOINTS.headNeck);
+const REAR_HIP = vector(RIG_JOINTS.rearHip);
+const REAR_KNEE = vector(RIG_JOINTS.rearKnee);
+const REAR_ANKLE = vector(RIG_JOINTS.rearAnkle);
+const FRONT_HIP = vector(RIG_JOINTS.frontHip);
+const FRONT_KNEE = vector(RIG_JOINTS.frontKnee);
+const FRONT_ANKLE = vector(RIG_JOINTS.frontAnkle);
+const REAR_SHOULDER = vector(RIG_JOINTS.rearShoulder);
+const WEAPON_SHOULDER = vector(RIG_JOINTS.weaponShoulder);
+const WEAPON_ELBOW = vector(RIG_JOINTS.weaponElbow);
+const WEAPON_WRIST = vector(RIG_JOINTS.weaponWrist);
+const WEAPON_GRIP = vector(RIG_JOINTS.weaponGrip);
+const KNIFE_TIP = vector(RIG_JOINTS.knifeTip);
 
 const UPPER_LENGTH = WEAPON_SHOULDER.distance(WEAPON_ELBOW);
 const FOREARM_LENGTH = WEAPON_ELBOW.distance(WEAPON_WRIST);
@@ -82,29 +100,41 @@ export class PlayerCharacter {
   private currentWeaponPose = copyPose(NEUTRAL_WEAPON_POSE);
   private attackStartPose = copyPose(NEUTRAL_WEAPON_POSE);
   private readonly rig: RigSprites;
+  private readonly rearLeg: LegChain;
+  private readonly frontLeg: LegChain;
 
   constructor(private readonly scene: Phaser.Scene, parent: Phaser.GameObjects.Container) {
     this.shadow = scene.add.ellipse(0, 24, 54, 18, 0x172019, 0.2);
     this.visual = scene.add.container(0, 0).setScale(0.5);
     parent.add([this.shadow, this.visual]);
 
-    const rearLeg = this.jointedSprite('ren_rear_leg_side', REAR_HIP);
-    const rearArm = this.jointedSprite('ren_rear_arm_side', REAR_SHOULDER);
-    const torso = this.jointedSprite('ren_torso_side', TORSO_PIVOT);
-    const head = this.jointedSprite('ren_head_side', HEAD_NECK);
-    const frontLeg = this.jointedSprite('ren_front_leg_side', FRONT_HIP);
-    const weaponUpperArm = this.jointedSprite('ren_weapon_upper_arm_side', WEAPON_SHOULDER);
-    const weaponForearm = this.jointedSprite('ren_weapon_forearm_side', WEAPON_ELBOW);
-    const weaponHand = this.jointedSprite('ren_weapon_hand_side', WEAPON_WRIST);
-    const knife = this.jointedSprite('ren_weapon_knife', WEAPON_GRIP);
-    this.visual.add([
-      rearLeg, rearArm, torso, head, frontLeg,
-      weaponUpperArm, weaponForearm, knife, weaponHand,
-    ]);
-    this.rig = {
-      rearLeg, rearArm, torso, head, frontLeg,
-      weaponUpperArm, weaponForearm, weaponHand, knife,
+    const sprites = Object.fromEntries(RIG_PARTS.map((part) => [
+      part.name,
+      this.jointedSprite(part.textureKey, new Phaser.Math.Vector2(part.anchor.x, part.anchor.y)),
+    ])) as Record<RigPartName, Phaser.GameObjects.Sprite>;
+    this.visual.add(RIG_PARTS.map((part) => sprites[part.name]));
+    this.rig = sprites;
+    this.rearLeg = {
+      thigh: sprites.rearThigh,
+      shin: sprites.rearShin,
+      foot: sprites.rearFoot,
+      hip: REAR_HIP,
+      knee: REAR_KNEE,
+      ankle: REAR_ANKLE,
     };
+    this.frontLeg = {
+      thigh: sprites.frontThigh,
+      shin: sprites.frontShin,
+      foot: sprites.frontFoot,
+      hip: FRONT_HIP,
+      knee: FRONT_KNEE,
+      ankle: FRONT_ANKLE,
+    };
+    const neutralPose = createNeutralRigPose();
+    RIG_PARTS.forEach((part) => {
+      const pose = neutralPose[part.name];
+      sprites[part.name].setPosition(pose.x, pose.y).setRotation(pose.rotation);
+    });
   }
 
   get canAttack(): boolean {
@@ -146,6 +176,24 @@ export class PlayerCharacter {
       KNIFE_TIP.y - WEAPON_GRIP.y,
     );
     return new Phaser.Math.Vector2(tip.x, tip.y);
+  }
+
+  rigSnapshot(): RigSnapshot {
+    const connectionErrors = Object.fromEntries(RIG_CONNECTIONS.map((connection) => {
+      const from = this.rig[connection.from].getWorldTransformMatrix().transformPoint(
+        connection.fromPoint.x,
+        connection.fromPoint.y,
+      );
+      const to = this.rig[connection.to].getWorldTransformMatrix().transformPoint(
+        connection.toPoint.x,
+        connection.toPoint.y,
+      );
+      return [connection.name, Math.hypot(from.x - to.x, from.y - to.y)];
+    })) as RigConnectionErrors;
+    return {
+      parts: RIG_PARTS.map((part) => ({ name: part.name, textureKey: this.rig[part.name].texture.key })),
+      connectionErrors,
+    };
   }
 
   startAttack(angle: number): boolean {
@@ -248,6 +296,17 @@ export class PlayerCharacter {
     this.queuedAttackAngle = undefined;
   }
 
+  private poseRigidLeg(chain: LegChain, angleDegrees: number): void {
+    const { thigh, shin, foot, hip, knee, ankle } = chain;
+    const rotation = Phaser.Math.DegToRad(angleDegrees);
+    const hipPosition = local(hip);
+    const kneePosition = knee.clone().subtract(hip).rotate(rotation).add(hipPosition);
+    const anklePosition = ankle.clone().subtract(knee).rotate(rotation).add(kneePosition);
+    thigh.setPosition(hipPosition.x, hipPosition.y).setRotation(rotation);
+    shin.setPosition(kneePosition.x, kneePosition.y).setRotation(rotation);
+    foot.setPosition(anklePosition.x, anklePosition.y).setRotation(rotation);
+  }
+
   private attackPoseAt(attack: WeaponAttack, elapsed: number): WeaponPose {
     const windupAt = attack.activeAt * 0.48;
     if (elapsed < windupAt) {
@@ -270,7 +329,8 @@ export class PlayerCharacter {
   private pose(delta: number, movement: Phaser.Math.Vector2, _aimAngle: number): void {
     if (this.action === 'dead') return;
     const {
-      rearLeg, rearArm, torso, head, frontLeg,
+      rearThigh, rearShin, rearFoot, rearArm, torso, head,
+      frontThigh, frontShin, frontFoot, garmentHem,
       weaponUpperArm, weaponForearm, weaponHand, knife,
     } = this.rig;
     const now = this.scene.time.now;
@@ -283,8 +343,6 @@ export class PlayerCharacter {
     this.visual.angle = 0;
     this.shadow.setScale(1 - bob * 0.012, 1 - bob * 0.006);
 
-    const rearHip = local(REAR_HIP);
-    const frontHip = local(FRONT_HIP);
     const rearShoulder = local(REAR_SHOULDER);
     const torsoPivot = local(TORSO_PIVOT);
     let weaponPose = interpolatePose(
@@ -316,14 +374,15 @@ export class PlayerCharacter {
 
     if (this.action !== 'attack') this.currentWeaponPose = copyPose(weaponPose);
 
-    rearLeg.setPosition(rearHip.x, rearHip.y).setAngle(step * 10 + weaponPose.rearLegAngle);
-    frontLeg.setPosition(frontHip.x, frontHip.y).setAngle(-step * 11 + weaponPose.frontLegAngle);
+    this.poseRigidLeg(this.rearLeg, step * 10 + weaponPose.rearLegAngle);
+    this.poseRigidLeg(this.frontLeg, -step * 11 + weaponPose.frontLegAngle);
     rearArm.setPosition(rearShoulder.x, rearShoulder.y).setAngle(
       -step * 8 + breath * (1 - this.moveBlend) + weaponPose.rearArmAngle,
     );
     torso.setPosition(torsoPivot.x, torsoPivot.y).setAngle(
       step * 1.5 + movement.x * this.moveBlend * 1.5 + weaponPose.torsoAngle,
     );
+    garmentHem.setPosition(torso.x, torso.y).setRotation(torso.rotation);
     this.visual.y += weaponPose.bodyY;
 
     const torsoRotation = torso.rotation;
