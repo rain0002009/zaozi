@@ -9,12 +9,14 @@ import {
 import {
   createNeutralRigPose,
   RIG_CONNECTIONS,
+  RIG_FOOT_SOLES,
   RIG_JOINTS,
   RIG_PARTS,
   RIG_ROOT,
   RigConnectionErrors,
   RigPartName,
 } from './CharacterRig';
+import { CharacterMotion, CharacterMotionPose, FootMotion } from './CharacterMotion';
 
 export type PlayerAction = 'idle' | 'move' | 'attack' | 'dodge' | 'hurt' | 'dead';
 
@@ -26,6 +28,13 @@ export type AttackEvent = {
 export type RigSnapshot = {
   parts: { name: RigPartName; textureKey: string }[];
   connectionErrors: RigConnectionErrors;
+  gait: {
+    phase: number;
+    supportFoot: CharacterMotionPose['supportFoot'];
+    travel: CharacterMotionPose['travel'];
+    activity: number;
+    soles: Record<CharacterMotionPose['supportFoot'], { x: number; y: number }>;
+  };
 };
 
 type RigSprites = Record<RigPartName, Phaser.GameObjects.Sprite>;
@@ -37,6 +46,23 @@ type LegChain = {
   hip: Phaser.Math.Vector2;
   knee: Phaser.Math.Vector2;
   ankle: Phaser.Math.Vector2;
+  soleOffset: Phaser.Math.Vector2;
+  upperOffset: Phaser.Math.Vector2;
+  lowerOffset: Phaser.Math.Vector2;
+  upperNeutralAngle: number;
+  lowerNeutralAngle: number;
+  bendDirection: number;
+};
+
+type LegDefinition = {
+  thigh: 'rearThigh' | 'frontThigh';
+  shin: 'rearShin' | 'frontShin';
+  foot: 'rearFoot' | 'frontFoot';
+  hip: Phaser.Math.Vector2;
+  knee: Phaser.Math.Vector2;
+  ankle: Phaser.Math.Vector2;
+  sole: Phaser.Math.Vector2;
+  bendDirection: number;
 };
 
 const ROOT = new Phaser.Math.Vector2(RIG_ROOT.x, RIG_ROOT.y);
@@ -65,6 +91,25 @@ const FOREARM_NEUTRAL = Phaser.Math.Angle.Between(
   WEAPON_ELBOW.x, WEAPON_ELBOW.y, WEAPON_WRIST.x, WEAPON_WRIST.y,
 );
 const GRIP_FROM_WRIST = WEAPON_GRIP.clone().subtract(WEAPON_WRIST);
+
+const createLegChain = (sprites: RigSprites, definition: LegDefinition): LegChain => ({
+  thigh: sprites[definition.thigh],
+  shin: sprites[definition.shin],
+  foot: sprites[definition.foot],
+  hip: definition.hip,
+  knee: definition.knee,
+  ankle: definition.ankle,
+  soleOffset: definition.sole.clone().subtract(definition.ankle),
+  upperOffset: definition.knee.clone().subtract(definition.hip),
+  lowerOffset: definition.ankle.clone().subtract(definition.knee),
+  upperNeutralAngle: Phaser.Math.Angle.Between(
+    definition.hip.x, definition.hip.y, definition.knee.x, definition.knee.y,
+  ),
+  lowerNeutralAngle: Phaser.Math.Angle.Between(
+    definition.knee.x, definition.knee.y, definition.ankle.x, definition.ankle.y,
+  ),
+  bendDirection: definition.bendDirection,
+});
 
 const copyPose = (pose: WeaponPose): WeaponPose => ({ ...pose });
 
@@ -96,7 +141,8 @@ export class PlayerCharacter {
   private lockedAimAngle = 0;
   private attackHitSent = false;
   private hurtAngle = 0;
-  private moveBlend = 0;
+  private readonly motion = new CharacterMotion();
+  private motionPose: CharacterMotionPose;
   private currentWeaponPose = copyPose(NEUTRAL_WEAPON_POSE);
   private attackStartPose = copyPose(NEUTRAL_WEAPON_POSE);
   private readonly rig: RigSprites;
@@ -114,22 +160,32 @@ export class PlayerCharacter {
     ])) as Record<RigPartName, Phaser.GameObjects.Sprite>;
     this.visual.add(RIG_PARTS.map((part) => sprites[part.name]));
     this.rig = sprites;
-    this.rearLeg = {
-      thigh: sprites.rearThigh,
-      shin: sprites.rearShin,
-      foot: sprites.rearFoot,
+    this.rearLeg = createLegChain(sprites, {
+      thigh: 'rearThigh',
+      shin: 'rearShin',
+      foot: 'rearFoot',
       hip: REAR_HIP,
       knee: REAR_KNEE,
       ankle: REAR_ANKLE,
-    };
-    this.frontLeg = {
-      thigh: sprites.frontThigh,
-      shin: sprites.frontShin,
-      foot: sprites.frontFoot,
+      sole: vector(RIG_JOINTS.rearSole),
+      bendDirection: 1,
+    });
+    this.frontLeg = createLegChain(sprites, {
+      thigh: 'frontThigh',
+      shin: 'frontShin',
+      foot: 'frontFoot',
       hip: FRONT_HIP,
       knee: FRONT_KNEE,
       ankle: FRONT_ANKLE,
-    };
+      sole: vector(RIG_JOINTS.frontSole),
+      bendDirection: -1,
+    });
+    this.motionPose = this.motion.advance({
+      elapsedMs: 0,
+      displacement: { x: 0, y: 0 },
+      facing: this.facing,
+      paused: false,
+    });
     const neutralPose = createNeutralRigPose();
     RIG_PARTS.forEach((part) => {
       const pose = neutralPose[part.name];
@@ -190,9 +246,27 @@ export class PlayerCharacter {
       );
       return [connection.name, Math.hypot(from.x - to.x, from.y - to.y)];
     })) as RigConnectionErrors;
+    const rearSole = this.rig.rearFoot.getWorldTransformMatrix().transformPoint(
+      RIG_FOOT_SOLES.rearSole.point.x,
+      RIG_FOOT_SOLES.rearSole.point.y,
+    );
+    const frontSole = this.rig.frontFoot.getWorldTransformMatrix().transformPoint(
+      RIG_FOOT_SOLES.frontSole.point.x,
+      RIG_FOOT_SOLES.frontSole.point.y,
+    );
     return {
       parts: RIG_PARTS.map((part) => ({ name: part.name, textureKey: this.rig[part.name].texture.key })),
       connectionErrors,
+      gait: {
+        phase: this.motionPose.phase,
+        supportFoot: this.motionPose.supportFoot,
+        travel: this.motionPose.travel,
+        activity: this.motionPose.activity,
+        soles: {
+          rear: { x: rearSole.x, y: rearSole.y },
+          front: { x: frontSole.x, y: frontSole.y },
+        },
+      },
     };
   }
 
@@ -239,7 +313,12 @@ export class PlayerCharacter {
     this.scene.tweens.add({ targets: this.visual, alpha: 0.12, scaleY: 0.16, y: 32, duration: 560, ease: 'Quad.easeIn' });
   }
 
-  update(delta: number, movement: Phaser.Math.Vector2, aimAngle: number): AttackEvent | undefined {
+  update(
+    delta: number,
+    movement: Phaser.Math.Vector2,
+    displacement: Phaser.Math.Vector2,
+    aimAngle: number,
+  ): AttackEvent | undefined {
     const previousElapsed = this.actionElapsed;
     this.actionElapsed += delta;
 
@@ -275,7 +354,13 @@ export class PlayerCharacter {
       this.finishAction(movement);
     }
 
-    this.moveBlend = Phaser.Math.Linear(this.moveBlend, this.action === 'move' ? 1 : 0, Math.min(1, delta / 80));
+    const gaitDisplacement = this.action === 'move' ? displacement : Phaser.Math.Vector2.ZERO;
+    this.motionPose = this.motion.advance({
+      elapsedMs: delta,
+      displacement: gaitDisplacement,
+      facing: this.facing,
+      paused: false,
+    });
     this.pose(delta, movement, aimAngle);
     return attackEvent;
   }
@@ -307,6 +392,49 @@ export class PlayerCharacter {
     foot.setPosition(anklePosition.x, anklePosition.y).setRotation(rotation);
   }
 
+  private poseGaitLeg(chain: LegChain, foot: FootMotion, bodyY: number): void {
+    const { thigh, shin, foot: footSprite, hip } = chain;
+    const hipPosition = local(hip);
+    const footRotation = Phaser.Math.DegToRad(foot.lift * (chain.bendDirection > 0 ? -0.45 : 0.45));
+    const targetSole = new Phaser.Math.Vector2(
+      (foot.sole.x - this.motionPose.bodyX) * 2,
+      (foot.sole.y - bodyY) * 2,
+    );
+    const targetAnkle = targetSole.subtract(chain.soleOffset.clone().rotate(footRotation));
+    const hipToAnkle = targetAnkle.clone().subtract(hipPosition);
+    const upperLength = chain.upperOffset.length();
+    const lowerLength = chain.lowerOffset.length();
+    const distance = Phaser.Math.Clamp(
+      hipToAnkle.length(),
+      Math.abs(upperLength - lowerLength) + 0.01,
+      upperLength + lowerLength - 0.01,
+    );
+    const targetAngle = hipToAnkle.angle();
+    const kneeOffset = Math.acos(Phaser.Math.Clamp(
+      (distance * distance + upperLength * upperLength - lowerLength * lowerLength)
+        / (2 * distance * upperLength),
+      -1,
+      1,
+    ));
+    const upperAngle = targetAngle - chain.bendDirection * kneeOffset;
+    const kneePosition = hipPosition.clone().add(
+      new Phaser.Math.Vector2(Math.cos(upperAngle), Math.sin(upperAngle)).scale(upperLength),
+    );
+    const lowerAngle = Phaser.Math.Angle.Between(
+      kneePosition.x,
+      kneePosition.y,
+      targetAnkle.x,
+      targetAnkle.y,
+    );
+    const anklePosition = kneePosition.clone().add(
+      new Phaser.Math.Vector2(Math.cos(lowerAngle), Math.sin(lowerAngle)).scale(lowerLength),
+    );
+
+    thigh.setPosition(hipPosition.x, hipPosition.y).setRotation(upperAngle - chain.upperNeutralAngle);
+    shin.setPosition(kneePosition.x, kneePosition.y).setRotation(lowerAngle - chain.lowerNeutralAngle);
+    footSprite.setPosition(anklePosition.x, anklePosition.y).setRotation(footRotation);
+  }
+
   private attackPoseAt(attack: WeaponAttack, elapsed: number): WeaponPose {
     const windupAt = attack.activeAt * 0.48;
     if (elapsed < windupAt) {
@@ -334,12 +462,15 @@ export class PlayerCharacter {
       weaponUpperArm, weaponForearm, weaponHand, knife,
     } = this.rig;
     const now = this.scene.time.now;
-    const step = Math.sin(now * Math.PI * 4 / 1000) * this.moveBlend;
     const breath = Math.sin(now * Math.PI * 2 / 1200);
-    const bob = -Math.abs(step) * 3 + breath * (1 - this.moveBlend) * 1.5;
+    const gaitActive = this.action === 'move' || this.action === 'idle';
+    const bob = gaitActive
+      ? this.motionPose.bodyY + breath * (1 - this.motionPose.activity) * 1.5
+      : breath * 0.4;
 
-    this.visual.setScale(this.facing === 'left' ? -0.5 : 0.5, 0.5);
-    this.visual.setPosition(0, bob);
+    const facingScale = this.facing === 'left' ? -1 : 1;
+    this.visual.setScale(facingScale * 0.5, 0.5);
+    this.visual.setPosition(gaitActive ? facingScale * this.motionPose.bodyX : 0, bob);
     this.visual.angle = 0;
     this.shadow.setScale(1 - bob * 0.012, 1 - bob * 0.006);
 
@@ -357,7 +488,6 @@ export class PlayerCharacter {
       const progress = Phaser.Math.Clamp(this.actionElapsed / 260, 0, 1);
       const tuck = Math.sin(progress * Math.PI);
       this.visual.angle = Math.cos(this.lockedAimAngle) * tuck * 18;
-      const facingScale = this.facing === 'left' ? -1 : 1;
       this.visual.setScale(facingScale * 0.5 * (1 + tuck * 0.08), 0.5 * (1 - tuck * 0.28));
       this.visual.y += tuck * 10;
       weaponPose.upperArmAngle += 12 * tuck;
@@ -374,13 +504,18 @@ export class PlayerCharacter {
 
     if (this.action !== 'attack') this.currentWeaponPose = copyPose(weaponPose);
 
-    this.poseRigidLeg(this.rearLeg, step * 10 + weaponPose.rearLegAngle);
-    this.poseRigidLeg(this.frontLeg, -step * 11 + weaponPose.frontLegAngle);
+    if (gaitActive) {
+      this.poseGaitLeg(this.rearLeg, this.motionPose.feet.rear, bob);
+      this.poseGaitLeg(this.frontLeg, this.motionPose.feet.front, bob);
+    } else {
+      this.poseRigidLeg(this.rearLeg, weaponPose.rearLegAngle);
+      this.poseRigidLeg(this.frontLeg, weaponPose.frontLegAngle);
+    }
     rearArm.setPosition(rearShoulder.x, rearShoulder.y).setAngle(
-      -step * 8 + breath * (1 - this.moveBlend) + weaponPose.rearArmAngle,
+      this.motionPose.rearArmAngle + breath * (1 - this.motionPose.activity) + weaponPose.rearArmAngle,
     );
     torso.setPosition(torsoPivot.x, torsoPivot.y).setAngle(
-      step * 1.5 + movement.x * this.moveBlend * 1.5 + weaponPose.torsoAngle,
+      this.motionPose.torsoAngle + movement.x * this.motionPose.activity * 0.8 + weaponPose.torsoAngle,
     );
     garmentHem.setPosition(torso.x, torso.y).setRotation(torso.rotation);
     this.visual.y += weaponPose.bodyY;

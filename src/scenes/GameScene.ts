@@ -576,6 +576,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayer(delta: number): void {
+    const previousPosition = new Phaser.Math.Vector2(this.player.x, this.player.y);
     if (this.hasAimPointer) {
       this.updateAim(this.input.activePointer);
       this.character.facePointer(this.input.activePointer.worldX - this.player.x);
@@ -609,7 +610,11 @@ export class GameScene extends Phaser.Scene {
       this.updateAim(this.input.activePointer);
       this.character.facePointer(this.input.activePointer.worldX - this.player.x);
     }
-    const attack = this.character.update(delta, direction, this.aimAngle);
+    const displacement = new Phaser.Math.Vector2(
+      this.player.x - previousPosition.x,
+      this.player.y - previousPosition.y,
+    );
+    const attack = this.character.update(delta, direction, displacement, this.aimAngle);
     this.player.x = Phaser.Math.Clamp(this.player.x + this.character.rootMotion(delta), 72, 952);
     this.updateKnifeTrail(delta);
     if (attack) this.resolveMeleeHit(attack);
