@@ -23,8 +23,7 @@ export class BaseScene extends Phaser.Scene {
   private forgePreviewCard!: Phaser.GameObjects.Container;
 
   // Forge state
-  private selectedPrefixWord?: WordId;
-  private selectedCoreWord?: WordId;
+  private currentForgeWords: WordId[] = [];
 
   // Inventory UI
   private selectedStrokeForPlacement: Stroke = '一';
@@ -91,7 +90,7 @@ export class BaseScene extends Phaser.Scene {
   private drawTabSwitcher(): void {
     const tabs = [
       { id: 'craft' as const, label: '✍️ 毛笔宣纸造字台' },
-      { id: 'forge' as const, label: '⚔️ 铸武台 (两字成武)' },
+      { id: 'forge' as const, label: '⚔️ 铸武台 (字词熔铸成武)' },
     ];
 
     tabs.forEach((tab, index) => {
@@ -212,7 +211,7 @@ export class BaseScene extends Phaser.Scene {
     parent.add(this.add.text(48, 160, '毛笔宣纸造字台', {
       fontFamily: 'serif', fontSize: '24px', color: '#ede3ce',
     }));
-    parent.add(this.add.text(48, 194, '在宣纸画板上运笔书写。支持 9,507 汉字离线识别，识别后比对仓中笔画即可【凝字成符】。', {
+    parent.add(this.add.text(48, 194, '在宣纸画板上运笔书写。以墨化符，比对仓中笔画即可【凝字成符】。', {
       fontSize: '13px', color: '#97a393',
     }));
 
@@ -314,7 +313,7 @@ export class BaseScene extends Phaser.Scene {
       fontFamily: 'serif', fontSize: '18px', color: '#ebd8b2',
     }));
 
-    this.candidateStatusText = this.add.text(panelX + 16, panelY + 42, '提笔挥毫，笔走龙蛇（离线万字库即时匹配）', {
+    this.candidateStatusText = this.add.text(panelX + 16, panelY + 42, '提笔挥毫，笔走龙蛇（墨韵感应字形）', {
       fontSize: '12px', color: '#97a393',
     });
     parent.add(this.candidateStatusText);
@@ -365,13 +364,13 @@ export class BaseScene extends Phaser.Scene {
       fontSize: '13px', color: '#a0b39c',
     });
     this.detailSummaryText = this.add.text(panelX + 32, cardY + 54, '请在左侧宣纸画板书写，系统将实时识别。', {
-      fontSize: '13px', color: '#c4d0be', wordWrap: { width: 360 }, lineSpacing: 4,
+      fontSize: '13px', color: '#c4d0be', wordWrap: { width: 350 }, lineSpacing: 4,
     });
-    this.detailRecipeText = this.add.text(panelX + 32, cardY + 82, '', {
-      fontSize: '12px', color: '#e2d7c5',
+    this.detailRecipeText = this.add.text(panelX + 32, cardY + 84, '', {
+      fontSize: '12px', color: '#e2d7c5', wordWrap: { width: 350 },
     });
-    this.detailStatusText = this.add.text(panelX + 32, cardY + 106, '', {
-      fontSize: '12px', color: '#86efac',
+    this.detailStatusText = this.add.text(panelX + 32, cardY + 108, '', {
+      fontSize: '12px', color: '#86efac', wordWrap: { width: 350 },
     });
 
     parent.add([
@@ -523,45 +522,31 @@ export class BaseScene extends Phaser.Scene {
     }
 
     const candidate = this.selectedCandidate;
-    const char = candidate.character;
-    const isKnown = candidate.isKnown;
-    const wordId = candidate.wordId;
+    const wordId = candidate.wordId || candidate.character;
+    const def = gameState.getWordDefinition(wordId);
+    const check = gameState.canSynthesizeCharacter(wordId);
+    const isAlreadyUnlocked = gameState.meta.unlockedWords.includes(wordId);
 
-    if (isKnown && wordId) {
-      const def = WORDS[wordId];
-      const check = gameState.canSynthesizeCharacter(wordId);
-      const isAlreadyUnlocked = gameState.meta.unlockedWords.includes(wordId);
+    this.detailCharText.setText(`【${def.name}】`);
+    this.detailTypeText.setText(`[${def.type}]`);
+    this.detailSummaryText.setText(def.summary);
 
-      this.detailCharText.setText(`【${def.name}】`);
-      this.detailTypeText.setText(`[${def.type}]`);
-      this.detailSummaryText.setText(def.summary);
+    const recipeStr = Object.entries(check.recipe)
+      .map(([s, n]) => `${s}×${n}`)
+      .join(' ');
+    this.detailRecipeText.setText(`需消耗笔画：${recipeStr || '无'}`);
 
-      const recipeStr = Object.entries(def.recipe)
-        .map(([s, n]) => `${s}×${n}`)
-        .join(' ');
-      this.detailRecipeText.setText(`配方需消耗笔画：${recipeStr}`);
-
-      if (check.canSynthesize) {
-        this.detailStatusText.setText(
-          isAlreadyUnlocked
-            ? '✓ 仓中笔画充足（此字已收录，可再次凝字补存）'
-            : '✨ 仓中笔画充足！可凝字入库'
-        );
-        this.detailStatusText.setColor('#86efac');
-        this.setSynthesizeActive(true);
-      } else {
-        this.detailStatusText.setText(check.error || '仓中笔画不足');
-        this.detailStatusText.setColor('#f87171');
-        this.setSynthesizeActive(false);
-      }
-    } else {
-      this.detailCharText.setText(`【${char}】`);
-      this.detailTypeText.setText('[世俗字]');
-      this.detailSummaryText.setText(
-        '此字尚未参透兵道奥妙。推荐书写：刀、弓、盾、木、火、金、石、水、风、雷、枪、斧 等。'
+    if (check.canSynthesize) {
+      this.detailStatusText.setText(
+        isAlreadyUnlocked
+          ? '✓ 仓中笔画充足（可凝字入库）'
+          : '✨ 仓中笔画充足！可凝字入库'
       );
-      this.detailRecipeText.setText('（非兵道词库汉字，暂不可用于铸武）');
-      this.detailStatusText.setText('');
+      this.detailStatusText.setColor('#86efac');
+      this.setSynthesizeActive(true);
+    } else {
+      this.detailStatusText.setText(check.error || '仓中笔画不足');
+      this.detailStatusText.setColor('#f87171');
       this.setSynthesizeActive(false);
     }
   }
@@ -574,18 +559,27 @@ export class BaseScene extends Phaser.Scene {
     } else {
       this.synthesizeButton.setBackgroundColor('#38423a');
       this.synthesizeButton.setColor('#68756a');
-      this.synthesizeButton.input!.cursor = 'default';
+      this.synthesizeButton.input!.cursor = 'pointer';
     }
   }
 
   private executeSynthesis(): void {
-    if (!this.selectedCandidate || !this.selectedCandidate.wordId) return;
+    if (!this.selectedCandidate) {
+      this.showFloatingNotice('请先在左侧宣纸画板书写汉字');
+      return;
+    }
 
-    const wordId = this.selectedCandidate.wordId;
+    const candidate = this.selectedCandidate;
+    const wordId = candidate.wordId || candidate.character;
+    const check = gameState.canSynthesizeCharacter(wordId);
+    if (!check.canSynthesize) {
+      this.showFloatingNotice(check.error || '仓中笔画不足，无法凝字成符');
+      return;
+    }
+
     const ok = gameState.synthesizeCharacter(wordId);
-
     if (ok) {
-      this.showFloatingNotice(`✨ 造字成功！汉字【${wordId}】已凝结入库！可前往铸武台锻造武器。`);
+      this.showFloatingNotice(`✨ 造字成功！汉字【${wordId}】存量 +1！可前往铸武台锻造武器。`);
       this.clearHandwriting();
       this.refreshInventoryUI();
       this.refreshRecipeBook();
@@ -594,7 +588,7 @@ export class BaseScene extends Phaser.Scene {
   }
 
   private drawRecipeBook(parent: Phaser.GameObjects.Container, x: number, y: number): void {
-    parent.add(this.add.text(x, y, '已收录汉字字库 (点击查看配方):', {
+    parent.add(this.add.text(x, y, '快捷凝字 (点击直接消耗笔画生成):', {
       fontSize: '13px', color: '#a0aca0',
     }));
 
@@ -610,21 +604,35 @@ export class BaseScene extends Phaser.Scene {
     if (!container) return;
     container.removeAll(true);
 
-    const unlocked = gameState.meta.unlockedWords;
-    unlocked.forEach((wordId, index) => {
-      const wx = index * 48;
+    const recipeWords = gameState.meta.recipeBook;
+    if (recipeWords.length === 0) {
+      container.add(this.add.text(0, 4, '（暂无已凝结汉字，请先在上方挥毫造字）', {
+        fontSize: '12px', color: '#687769', fontStyle: 'italic',
+      }));
+      return;
+    }
+
+    recipeWords.forEach((wordId, index) => {
+      const wx = index * 56;
       const btn = this.add.text(wx, 0, wordId, {
         fontFamily: 'serif',
-        fontSize: '24px',
+        fontSize: '22px',
         color: '#f0e8d5',
         backgroundColor: '#2b362c',
-        padding: { x: 10, y: 4 },
+        padding: { x: 12, y: 4 },
       }).setOrigin(0).setInteractive({ useHandCursor: true });
 
       btn.on('pointerdown', () => {
-        const def = WORDS[wordId];
-        const recipeStr = Object.entries(def.recipe).map(([s, c]) => `${s}×${c}`).join(' ');
-        this.showFloatingNotice(`【${def.name}】(${def.type}): 配方需 ${recipeStr}`);
+        const check = gameState.canSynthesizeCharacter(wordId);
+        if (check.canSynthesize) {
+          gameState.synthesizeCharacter(wordId);
+          this.showFloatingNotice(`✨ 快捷凝字成功！【${wordId}】存量 +1`);
+          this.refreshInventoryUI();
+          this.refreshRecipeBook();
+          this.refreshForgeUI();
+        } else {
+          this.showFloatingNotice(check.error || '仓中笔画不足');
+        }
       });
 
       container.add(btn);
@@ -636,75 +644,122 @@ export class BaseScene extends Phaser.Scene {
   private drawWeaponForge(): void {
     const parent = this.forgeContainer;
 
-    parent.add(this.add.text(48, 160, '铸武台 (两字组词成武)', {
+    parent.add(this.add.text(48, 160, '铸武台 (字词熔铸成武)', {
       fontFamily: 'serif', fontSize: '24px', color: '#ede3ce',
     }));
-    parent.add(this.add.text(48, 194, '将【属性/材质字】与【兵刃核心字】放入熔炉，锻造独一无二的词组武器。', {
+    parent.add(this.add.text(48, 194, '将仓中已生成的字拖拽或点击放入锻造台，熔铸词组武器。不限字数，字在锻造后消耗。', {
       fontSize: '13px', color: '#97a393',
     }));
 
-    // Slot 1: Prefix / Attribute Word
-    const slot1X = 48;
-    const slotY = 230;
-    parent.add(this.add.rectangle(slot1X, slotY, 140, 140, 0x222c24, 0.98).setOrigin(0).setStrokeStyle(2, 0x5a705e));
-    parent.add(this.add.text(slot1X + 70, slotY + 16, '材质/属性字', { fontSize: '13px', color: '#889888' }).setOrigin(0.5));
-    const slot1Text = this.add.text(slot1X + 70, slotY + 75, this.selectedPrefixWord || '未选', {
-      fontFamily: 'serif', fontSize: '44px', color: this.selectedPrefixWord ? '#f0dfb3' : '#506052',
-    }).setOrigin(0.5);
-    (this as any).forgeSlot1Text = slot1Text;
-    parent.add(slot1Text);
+    // Forge Slots Drop Zone
+    const forgeBoxX = 48;
+    const forgeBoxY = 230;
+    const forgeBoxW = 470;
+    const forgeBoxH = 140;
 
-    // Plus sign
-    parent.add(this.add.text(slot1X + 165, slotY + 70, '＋', {
-      fontFamily: 'serif', fontSize: '32px', color: '#c0a87a',
-    }).setOrigin(0.5));
+    const forgeBoxBg = this.add.rectangle(forgeBoxX, forgeBoxY, forgeBoxW, forgeBoxH, 0x222c24, 0.98)
+      .setOrigin(0)
+      .setStrokeStyle(2, 0x5a705e);
+    parent.add(forgeBoxBg);
 
-    // Slot 2: Core Weapon Word
-    const slot2X = slot1X + 190;
-    parent.add(this.add.rectangle(slot2X, slotY, 140, 140, 0x222c24, 0.98).setOrigin(0).setStrokeStyle(2, 0x5a705e));
-    parent.add(this.add.text(slot2X + 70, slotY + 16, '兵刃核心字', { fontSize: '13px', color: '#889888' }).setOrigin(0.5));
-    const slot2Text = this.add.text(slot2X + 70, slotY + 75, this.selectedCoreWord || '未选', {
-      fontFamily: 'serif', fontSize: '44px', color: this.selectedCoreWord ? '#f0dfb3' : '#506052',
-    }).setOrigin(0.5);
-    (this as any).forgeSlot2Text = slot2Text;
-    parent.add(slot2Text);
+    parent.add(this.add.text(forgeBoxX + 16, forgeBoxY + 12, '锻造槽位 (拖拽或点击下方字放入，点击槽内字可移出):', {
+      fontSize: '12px', color: '#8fa090',
+    }));
 
-    // Arrow
-    parent.add(this.add.text(slot2X + 165, slotY + 70, '➔', {
-      fontSize: '28px', color: '#c0a87a',
-    }).setOrigin(0.5));
+    // Clear Button
+    const clearBtn = this.add.text(forgeBoxX + forgeBoxW - 68, forgeBoxY + 10, '清空槽位', {
+      fontSize: '11px', color: '#f87171', backgroundColor: '#332222', padding: { x: 6, y: 3 },
+    }).setOrigin(0).setInteractive({ useHandCursor: true });
+    clearBtn.on('pointerdown', () => {
+      this.currentForgeWords = [];
+      this.refreshForgeUI();
+    });
+    parent.add(clearBtn);
+
+    const slotsContainer = this.add.container(forgeBoxX, forgeBoxY);
+    (this as any).forgeSlotsContainer = slotsContainer;
+    parent.add(slotsContainer);
 
     // Forge Preview Card
-    const previewX = slot2X + 195;
-    this.forgePreviewCard = this.add.container(previewX, slotY);
+    const previewX = forgeBoxX + forgeBoxW + 20;
+    this.forgePreviewCard = this.add.container(previewX, forgeBoxY);
     parent.add(this.forgePreviewCard);
-    this.updateForgePreview();
 
-    // Selectable Word Buttons below
-    parent.add(this.add.text(48, 395, '选择放入的字 (点击下方已解锁字):', {
+    // Word Inventory Section
+    parent.add(this.add.text(48, 395, '仓中已生成字 (拖拽或点击放入锻造槽):', {
       fontSize: '14px', color: '#cbd5e1',
     }));
 
     const wordSelector = this.add.container(48, 425);
     (this as any).forgeWordSelector = wordSelector;
     parent.add(wordSelector);
-    this.refreshForgeWordSelector();
 
     // Unlocked Weapons Shelf below
-    parent.add(this.add.text(48, 510, '已锻造词组武器库 (点击直接装备出征):', {
+    parent.add(this.add.text(48, 510, '已铸造词组武器库 (点击直接装备出征):', {
       fontSize: '14px', color: '#cbd5e1',
     }));
 
     const weaponShelf = this.add.container(48, 540);
     (this as any).forgeWeaponShelf = weaponShelf;
     parent.add(weaponShelf);
-    this.refreshWeaponShelf();
+
+    this.refreshForgeUI();
   }
 
   private refreshForgeUI(): void {
+    this.refreshForgeSlots();
     this.refreshForgeWordSelector();
     this.refreshWeaponShelf();
     this.updateForgePreview();
+  }
+
+  private refreshForgeSlots(): void {
+    const container = (this as any).forgeSlotsContainer as Phaser.GameObjects.Container | undefined;
+    if (!container) return;
+    container.removeAll(true);
+
+    if (this.currentForgeWords.length === 0) {
+      const emptyHint = this.add.text(235, 75, '【虚位以待】从下方拖拽或点击字放入熔炉', {
+        fontSize: '13px', color: '#687769', fontStyle: 'italic',
+      }).setOrigin(0.5);
+      container.add(emptyHint);
+      return;
+    }
+
+    this.currentForgeWords.forEach((wordId, index) => {
+      const sx = 20 + index * 76;
+      const sy = 40;
+
+      const slot = this.add.container(sx, sy);
+      const bg = this.add.rectangle(0, 0, 64, 76, 0x1d2720, 0.95)
+        .setOrigin(0)
+        .setStrokeStyle(1.5, 0xd0b466)
+        .setInteractive({ useHandCursor: true });
+
+      const charText = this.add.text(32, 34, wordId, {
+        fontFamily: 'serif', fontSize: '32px', color: '#f0dfb3',
+      }).setOrigin(0.5);
+
+      const closeText = this.add.text(56, 8, '✕', {
+        fontSize: '11px', color: '#f87171',
+      }).setOrigin(0.5);
+
+      slot.add([bg, charText, closeText]);
+
+      bg.on('pointerdown', () => {
+        this.currentForgeWords.splice(index, 1);
+        this.refreshForgeUI();
+      });
+
+      container.add(slot);
+
+      if (index < this.currentForgeWords.length - 1) {
+        const plus = this.add.text(sx + 64 + 6, sy + 38, '＋', {
+          fontFamily: 'serif', fontSize: '18px', color: '#c0a87a',
+        }).setOrigin(0.5);
+        container.add(plus);
+      }
+    });
   }
 
   private refreshForgeWordSelector(): void {
@@ -712,40 +767,86 @@ export class BaseScene extends Phaser.Scene {
     if (!container) return;
     container.removeAll(true);
 
-    const unlocked = gameState.meta.unlockedWords;
-    unlocked.forEach((wordId, index) => {
-      const def = WORDS[wordId];
-      const x = (index % 8) * 85;
-      const y = Math.floor(index / 8) * 44;
+    const wordInventory = gameState.meta.wordInventory || {};
+    const wordsInInventory = (Object.keys(wordInventory) as WordId[]).filter(
+      (w) => (wordInventory[w] ?? 0) > 0
+    );
 
-      const isPrefix = def.type === '属性字';
-      const isCore = def.type === '兵刃字';
-
-      const isSelected = this.selectedPrefixWord === wordId || this.selectedCoreWord === wordId;
-
-      const btn = this.add.text(x, y, `${def.name} (${def.type[0]})`, {
-        fontFamily: 'serif',
-        fontSize: '15px',
-        color: isSelected ? '#ffffff' : '#f0e8d5',
-        backgroundColor: isSelected ? '#c09848' : isPrefix ? '#2c3e2e' : isCore ? '#3e2c2c' : '#283029',
-        padding: { x: 10, y: 6 },
-      }).setOrigin(0).setInteractive({ useHandCursor: true });
-
-      btn.on('pointerdown', () => {
-        if (isPrefix) {
-          this.selectedPrefixWord = this.selectedPrefixWord === wordId ? undefined : wordId;
-        } else if (isCore) {
-          this.selectedCoreWord = this.selectedCoreWord === wordId ? undefined : wordId;
-        } else {
-          // General word, assign to prefix if empty, otherwise core
-          if (!this.selectedPrefixWord) this.selectedPrefixWord = wordId;
-          else this.selectedCoreWord = wordId;
-        }
-        this.updateForgePreview();
-        this.refreshForgeWordSelector();
+    if (wordsInInventory.length === 0) {
+      const emptyText = this.add.text(0, 8, '（仓中暂无已生成的字，请先前往上方「毛笔宣纸造字台」运笔造字）', {
+        fontSize: '13px', color: '#6d7b6f', fontStyle: 'italic',
       });
+      container.add(emptyText);
+      return;
+    }
 
-      container.add(btn);
+    wordsInInventory.forEach((wordId, index) => {
+      const totalCount = wordInventory[wordId] ?? 0;
+      const placedCount = this.currentForgeWords.filter((w) => w === wordId).length;
+      const available = totalCount - placedCount;
+
+      const x = (index % 8) * 88;
+      const y = Math.floor(index / 8) * 50;
+
+      const card = this.add.container(x, y);
+      const isAvailable = available > 0;
+
+      const bg = this.add.rectangle(0, 0, 78, 42, isAvailable ? 0x222e25 : 0x181f1a, 0.95)
+        .setOrigin(0)
+        .setStrokeStyle(1.5, isAvailable ? 0x5a705e : 0x333d35);
+
+      const label = this.add.text(39, 21, `${wordId} ×${available}`, {
+        fontFamily: 'serif',
+        fontSize: '16px',
+        color: isAvailable ? '#f0e8d5' : '#576258',
+      }).setOrigin(0.5);
+
+      card.add([bg, label]);
+      container.add(card);
+
+      if (isAvailable) {
+        bg.setInteractive({ draggable: true, useHandCursor: true });
+
+        // Click to add directly
+        let dragStarted = false;
+        bg.on('pointerdown', () => {
+          dragStarted = false;
+        });
+
+        bg.on('dragstart', () => {
+          dragStarted = true;
+          bg.setStrokeStyle(2, 0xd0b466);
+          card.setDepth(100);
+        });
+
+        bg.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+          card.x = dragX;
+          card.y = dragY;
+        });
+
+        bg.on('dragend', (pointer: Phaser.Input.Pointer) => {
+          card.setDepth(0);
+          card.setPosition(x, y);
+
+          // Check if pointer is within the forge slots bounding box (x: 48..518, y: 230..370)
+          const inForgeBox = pointer.x >= 48 && pointer.x <= 518 && pointer.y >= 230 && pointer.y <= 370;
+          if (inForgeBox) {
+            this.currentForgeWords.push(wordId);
+            this.refreshForgeUI();
+          } else if (!dragStarted) {
+            // Click without dragging
+            this.currentForgeWords.push(wordId);
+            this.refreshForgeUI();
+          }
+        });
+
+        bg.on('pointerup', () => {
+          if (!dragStarted) {
+            this.currentForgeWords.push(wordId);
+            this.refreshForgeUI();
+          }
+        });
+      }
     });
   }
 
@@ -754,52 +855,56 @@ export class BaseScene extends Phaser.Scene {
     if (!card) return;
     card.removeAll(true);
 
-    const slot1Text = (this as any).forgeSlot1Text as Phaser.GameObjects.Text | undefined;
-    const slot2Text = (this as any).forgeSlot2Text as Phaser.GameObjects.Text | undefined;
-    if (slot1Text) slot1Text.setText(this.selectedPrefixWord || '未选').setColor(this.selectedPrefixWord ? '#f0dfb3' : '#506052');
-    if (slot2Text) slot2Text.setText(this.selectedCoreWord || '未选').setColor(this.selectedCoreWord ? '#f0dfb3' : '#506052');
-
     // Background card
     card.add(this.add.rectangle(0, 0, 240, 140, 0x242e26, 0.98).setOrigin(0).setStrokeStyle(2, 0x78907b));
 
-    if (this.selectedPrefixWord && this.selectedCoreWord) {
-      const weaponId = gameState.canForgeWeapon(this.selectedPrefixWord, this.selectedCoreWord);
-      if (weaponId) {
-        const weapon = COMPOUND_WEAPONS[weaponId];
-        card.add(this.add.text(18, 14, `【${weapon.name}】`, {
-          fontFamily: 'serif', fontSize: '20px', color: '#f7e7c4', fontStyle: 'bold',
-        }));
-        card.add(this.add.text(18, 42, weapon.summary, {
-          fontSize: '12px', color: '#b2c2af', wordWrap: { width: 204 }, lineSpacing: 4,
-        }));
-
-        const isEquipped = gameState.meta.equippedWeapon === weaponId;
-        const forgeBtn = this.add.text(120, 114, isEquipped ? '✓ 已装备出征' : '锻造并装备', {
-          fontSize: '13px',
-          color: isEquipped ? '#6e806d' : '#1e180d',
-          backgroundColor: isEquipped ? '#38463a' : '#d2a74c',
-          padding: { x: 18, y: 6 },
-        }).setOrigin(0.5).setInteractive({ useHandCursor: !isEquipped });
-
-        if (!isEquipped) {
-          forgeBtn.on('pointerdown', () => {
-            gameState.forgeWeapon(this.selectedPrefixWord!, this.selectedCoreWord!);
-            this.showFloatingNotice(`⚔️ 锻造成功！【${weapon.name}】已作为当前出征武器！`);
-            this.updateForgePreview();
-            this.refreshWeaponShelf();
-            this.updateExpeditionWeaponBadge();
-          });
-        }
-
-        card.add(forgeBtn);
-        return;
-      }
+    if (this.currentForgeWords.length === 0) {
+      card.add(this.add.text(120, 70, '未放入汉字\n请将下方字拖入或点击放入', {
+        fontSize: '13px', color: '#728070', align: 'center', lineSpacing: 6,
+      }).setOrigin(0.5));
+      return;
     }
 
-    // Default empty card state
-    card.add(this.add.text(120, 50, '未组合成武器\n请在左侧选入两字', {
-      fontSize: '13px', color: '#728070', align: 'center', lineSpacing: 6,
-    }).setOrigin(0.5));
+    const check = gameState.canPlayerForgeWeapon(this.currentForgeWords);
+    if (check.weaponId) {
+      const weapon = COMPOUND_WEAPONS[check.weaponId];
+      card.add(this.add.text(18, 14, `【${weapon.name}】`, {
+        fontFamily: 'serif', fontSize: '20px', color: '#f7e7c4', fontStyle: 'bold',
+      }));
+      card.add(this.add.text(18, 40, `伤害 ${weapon.stats.damage} · 攻速 ${weapon.stats.attackSpeed}x`, {
+        fontSize: '12px', color: '#d0b466',
+      }));
+      card.add(this.add.text(18, 62, weapon.summary, {
+        fontSize: '11px', color: '#b2c2af', wordWrap: { width: 204 }, lineSpacing: 3,
+      }));
+
+      const isEquipped = gameState.meta.equippedWeapon === check.weaponId;
+      const forgeBtn = this.add.text(120, 114, isEquipped ? '✓ 已装备出征' : '锻造并装备', {
+        fontSize: '13px',
+        color: isEquipped ? '#6e806d' : '#1e180d',
+        backgroundColor: isEquipped ? '#38463a' : '#d2a74c',
+        padding: { x: 18, y: 6 },
+      }).setOrigin(0.5).setInteractive({ useHandCursor: !isEquipped });
+
+      if (!isEquipped) {
+        forgeBtn.on('pointerdown', () => {
+          const forged = gameState.forgeWeapon(this.currentForgeWords);
+          if (forged) {
+            this.showFloatingNotice(`⚔️ 锻造成功！【${weapon.name}】已作为当前出征武器！`);
+            this.currentForgeWords = [];
+            this.refreshForgeUI();
+            this.updateExpeditionWeaponBadge();
+          }
+        });
+      }
+
+      card.add(forgeBtn);
+    } else {
+      const errorMsg = check.error || '当前汉字组合尚未参透武器真意';
+      card.add(this.add.text(120, 70, `${errorMsg}\n（可继续调整或添加放入的字）`, {
+        fontSize: '12px', color: '#c27b7b', align: 'center', lineSpacing: 6, wordWrap: { width: 210 },
+      }).setOrigin(0.5));
+    }
   }
 
   private refreshWeaponShelf(): void {
@@ -810,6 +915,7 @@ export class BaseScene extends Phaser.Scene {
     const unlocked = gameState.meta.unlockedWeapons;
     unlocked.forEach((wId, index) => {
       const weapon = COMPOUND_WEAPONS[wId];
+      if (!weapon) return;
       const x = index * 160;
       const isEquipped = gameState.meta.equippedWeapon === wId;
 
@@ -851,20 +957,20 @@ export class BaseScene extends Phaser.Scene {
     const gate = this.add.container(gateX, gateY);
     gate.add(this.add.rectangle(0, 0, 158, 480, 0x222a23, 0.98).setOrigin(0).setStrokeStyle(2, 0x8a7751));
 
-    gate.add(this.add.text(79, 32, '关', {
-      fontFamily: 'serif', fontSize: '64px', color: '#e6d3a2',
+    gate.add(this.add.text(79, 52, '关', {
+      fontFamily: 'serif', fontSize: '56px', color: '#e6d3a2',
     }).setOrigin(0.5));
 
-    gate.add(this.add.text(79, 104, '三域出征', {
+    gate.add(this.add.text(79, 116, '三域出征', {
       fontFamily: 'serif', fontSize: '18px', color: '#f1eee3',
     }).setOrigin(0.5));
 
-    gate.add(this.add.text(79, 134, `通关 ${gameState.meta.victories} 次`, {
+    gate.add(this.add.text(79, 144, `通关 ${gameState.meta.victories} 次`, {
       fontSize: '13px', color: '#aeb9ae',
     }).setOrigin(0.5));
 
     // Current equipped weapon badge
-    const badge = this.add.text(79, 210, '', {
+    const badge = this.add.text(79, 224, '', {
       fontFamily: 'serif', fontSize: '15px', color: '#f2dfb5', align: 'center', wordWrap: { width: 130 }, lineSpacing: 4,
     }).setOrigin(0.5);
     (this as any).expeditionWeaponBadge = badge;

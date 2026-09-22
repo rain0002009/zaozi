@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { handwritingService } from '../services/HandwritingService';
+import { strokeService } from '../services/StrokeService';
 
 export class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
@@ -12,8 +13,9 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Start handwriting service initialization in background
+    // Start handwriting service and stroke service initialization in background
     handwritingService.init();
+    strokeService.init();
     this.scene.start('Menu');
   }
 }

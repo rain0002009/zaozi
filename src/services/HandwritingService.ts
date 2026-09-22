@@ -89,12 +89,11 @@ export class HandwritingService {
 
       matcher.match(analyzedChar, limit, (matches: Array<{ character: string; score: number }>) => {
         results = matches.map((m) => {
-          const isKnown = m.character in WORDS;
           return {
             character: m.character,
             score: m.score,
-            isKnown,
-            wordId: isKnown ? (m.character as WordId) : undefined,
+            isKnown: true,
+            wordId: m.character as WordId,
           };
         });
       });

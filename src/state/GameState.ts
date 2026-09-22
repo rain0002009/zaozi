@@ -1,25 +1,12 @@
+import { strokeService } from '../services/StrokeService';
+
 export const STROKES = ['一', '丨', '丿', '㇏', '丶', '㇇'] as const;
 
 export type Stroke = (typeof STROKES)[number];
 
-export type WordId =
-  | '刀'
-  | '弓'
-  | '盾'
-  | '木'
-  | '火'
-  | '金'
-  | '石'
-  | '水'
-  | '十'
-  | '人'
-  | '大'
-  | '风'
-  | '雷'
-  | '枪'
-  | '斧';
+export type WordId = string;
 
-export type WordType = '兵刃字' | '属性字' | '基础字';
+export type WordType = '兵刃字' | '属性字' | '基础字' | '造化字';
 
 export type WordDefinition = {
   id: WordId;
@@ -30,7 +17,6 @@ export type WordDefinition = {
 };
 
 export type CompoundWeaponId =
-  | '基础刀'
   | '木刀'
   | '炎刀'
   | '金刀'
@@ -42,13 +28,14 @@ export type CompoundWeaponId =
   | '奔雷刀'
   | '破阵枪'
   | '灵木枪'
-  | '开山斧';
+  | '开山斧'
+  | '素铁刀'
+  | '风火刃';
 
 export type CompoundWeapon = {
   id: CompoundWeaponId;
   name: string;
-  prefixWord?: WordId;
-  coreWord: WordId;
+  words: WordId[];
   type: 'melee' | 'ranged' | 'defense';
   description: string;
   summary: string;
@@ -94,6 +81,7 @@ export type Settlement = {
 
 export type MetaState = {
   inventory: Inventory;
+  wordInventory: Partial<Record<WordId, number>>;
   unlockedWords: WordId[];
   equippedWords: WordId[];
   unlockedWeapons: CompoundWeaponId[];
@@ -102,7 +90,7 @@ export type MetaState = {
   victories: number;
 };
 
-const STORAGE_KEY = 'zaozi-save-v2';
+const STORAGE_KEY = 'zaozi-save-v3';
 
 export const WORDS: Record<WordId, WordDefinition> = {
   十: {
@@ -130,125 +118,123 @@ export const WORDS: Record<WordId, WordDefinition> = {
     id: '刀',
     name: '刀',
     type: '兵刃字',
-    summary: '短兵利刃，近身挥斩，可作为兵刃核心。',
+    summary: '短兵利刃，近身挥斩。',
     recipe: { '丿': 1, '㇇': 1 },
   },
   木: {
     id: '木',
     name: '木',
     type: '属性字',
-    summary: '生机灵巧，用于铸武大幅提高挥舞攻速。',
+    summary: '生机灵巧，柔韧自如。',
     recipe: { '一': 1, '丨': 1, '丿': 1, '㇏': 1 },
   },
   火: {
     id: '火',
     name: '火',
     type: '属性字',
-    summary: '炽烈暴虐，用于铸武附带火焰刀气与范围灼烧。',
+    summary: '炽烈暴虐，燎原不熄。',
     recipe: { '丶': 2, '丿': 1, '㇏': 1 },
   },
   金: {
     id: '金',
     name: '金',
     type: '属性字',
-    summary: '刚硬锋锐，用于铸武扩大攻击范围并附带破甲击退。',
+    summary: '刚硬锋锐，坚固无匹。',
     recipe: { '一': 3, '丨': 1, '丿': 1, '㇏': 1, '丶': 2 },
   },
   石: {
     id: '石',
     name: '石',
     type: '属性字',
-    summary: '厚重沉着，用于铸武附带重击地裂与短暂眩晕。',
+    summary: '厚重沉着，如磐似峦。',
     recipe: { '一': 2, '丨': 1, '丿': 1, '㇇': 1 },
   },
   水: {
     id: '水',
     name: '水',
     type: '属性字',
-    summary: '润物不息，用于铸武击中恢复微量气血。',
+    summary: '润物不息，奔流激荡。',
     recipe: { '丨': 1, '㇇': 1, '丿': 1, '㇏': 1 },
   },
   弓: {
     id: '弓',
     name: '弓',
     type: '兵刃字',
-    summary: '张弦蓄力，远程发射直线弹道兵刃。',
+    summary: '张弦蓄力，发于百步之外。',
     recipe: { '一': 1, '㇇': 2 },
   },
   盾: {
     id: '盾',
     name: '盾',
     type: '兵刃字',
-    summary: '坚壁抵挡，格挡伤害并可反击冲撞。',
+    summary: '坚壁抵挡，御敌身前。',
     recipe: { '一': 3, '丨': 1, '丿': 2, '㇇': 1 },
   },
   风: {
     id: '风',
     name: '风',
     type: '属性字',
-    summary: '疾风呼啸，用于铸武大幅提升攻速与身法，挥出狂暴风刃。',
+    summary: '疾风呼啸，倏忽无踪。',
     recipe: { '丿': 2, '㇇': 1, '丶': 1 },
   },
   雷: {
     id: '雷',
     name: '雷',
     type: '属性字',
-    summary: '雷霆万钧，用于铸武攻击附带连环闪电链。',
+    summary: '雷霆万钧，势若破竹。',
     recipe: { '一': 2, '丨': 2, '丶': 4, '㇇': 1 },
   },
   枪: {
     id: '枪',
     name: '枪',
     type: '兵刃字',
-    summary: '百兵之王，长兵远距离直线迅猛突刺。',
+    summary: '百兵之王，长兵远距离迅猛突刺。',
     recipe: { '一': 1, '丨': 1, '丿': 2, '㇏': 1, '㇇': 1 },
   },
   斧: {
     id: '斧',
     name: '斧',
     type: '兵刃字',
-    summary: '开山巨斧，大范围重劈引发地裂冲击波。',
+    summary: '开山巨斧，重劈撼地。',
     recipe: { '丿': 2, '丶': 2, '丨': 1 },
   },
 };
 
 export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
-  基础刀: {
-    id: '基础刀',
+  木刀: {
+    id: '木刀',
+    name: '木刀',
+    words: ['木', '刀'],
+    type: 'melee',
+    description: '以灵木雕琢而成的防身木刀，轻灵质朴。',
+    summary: '基础挥斩，伤害 8，攻速 1.0。',
+    stats: {
+      damage: 8,
+      attackSpeed: 1.0,
+      range: 105,
+      knockback: 100,
+      element: 'wood',
+    },
+  },
+  素铁刀: {
+    id: '素铁刀',
     name: '素铁刀',
-    coreWord: '刀',
+    words: ['刀'],
     type: 'melee',
     description: '未融合任何属性字的普通短刀，手感朴实。',
     summary: '基础三连斩，左键挥击攻击侧敌人。',
     stats: {
-      damage: 18,
+      damage: 12,
       attackSpeed: 1.0,
       range: 110,
       knockback: 120,
       element: 'none',
     },
   },
-  木刀: {
-    id: '木刀',
-    name: '灵木刀',
-    prefixWord: '木',
-    coreWord: '刀',
-    type: 'melee',
-    description: '以灵木雕琢而成的轻快利刃，轻若无物。',
-    summary: '攻速 +40%，连斩极为迅捷，身法灵活。',
-    stats: {
-      damage: 16,
-      attackSpeed: 1.4,
-      range: 105,
-      knockback: 100,
-      element: 'wood',
-    },
-  },
   炎刀: {
     id: '炎刀',
     name: '赤炎刀',
-    prefixWord: '火',
-    coreWord: '刀',
+    words: ['火', '刀'],
     type: 'melee',
     description: '刀身缠绕炽烈墨火，挥击割裂空气引发爆燃。',
     summary: '挥出烈焰刀芒，命中敌群附带范围灼烧。',
@@ -263,8 +249,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   金刀: {
     id: '金刀',
     name: '金精刃',
-    prefixWord: '金',
-    coreWord: '刀',
+    words: ['金', '刀'],
     type: 'melee',
     description: '金精玄铁锻造，锋利无匹，刃芒森寒。',
     summary: '范围 +30%，伤害提高，强力破甲击退。',
@@ -279,8 +264,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   石刃: {
     id: '石刃',
     name: '碎石刃',
-    prefixWord: '石',
-    coreWord: '刀',
+    words: ['石', '刀'],
     type: 'melee',
     description: '巨石磨制的厚重钝刀，挥动有崩山之势。',
     summary: '势大力沉，命中引发地裂震波，概率眩晕。',
@@ -295,8 +279,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   木弓: {
     id: '木弓',
     name: '青木弓',
-    prefixWord: '木',
-    coreWord: '弓',
+    words: ['木', '弓'],
     type: 'ranged',
     description: '柔韧青木制成，连续发射穿透木箭。',
     summary: '远程直线射击，连射速度快，穿透 1 名敌人。',
@@ -312,8 +295,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   烈火弓: {
     id: '烈火弓',
     name: '烈火弓',
-    prefixWord: '火',
-    coreWord: '弓',
+    words: ['火', '弓'],
     type: 'ranged',
     description: '弓弦附着妖火，射出的箭矢落地爆裂。',
     summary: '发射爆裂火箭，命中爆炸引燃地面产生火海。',
@@ -329,8 +311,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   磐石盾: {
     id: '磐石盾',
     name: '磐石盾',
-    prefixWord: '石',
-    coreWord: '盾',
+    words: ['石', '盾'],
     type: 'defense',
     description: '玄石厚盾，坚不可摧，可抵御并反弹冲击。',
     summary: '受创降低 45%，挥盾冲锋击飞前方所有敌群。',
@@ -345,8 +326,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   疾风刃: {
     id: '疾风刃',
     name: '疾风刃',
-    prefixWord: '风',
-    coreWord: '刀',
+    words: ['风', '刀'],
     type: 'melee',
     description: '御风而铸的轻灵刀刃，挥刀若狂风过境。',
     summary: '攻速 +50%，挥斩附带青色风刃，撕裂前排。',
@@ -361,8 +341,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   奔雷刀: {
     id: '奔雷刀',
     name: '奔雷刀',
-    prefixWord: '雷',
-    coreWord: '刀',
+    words: ['雷', '刀'],
     type: 'melee',
     description: '刀铭引雷符，劈砍带起霹雳爆鸣与金蛇电弧。',
     summary: '命中引发电弧跳跃，对邻近敌人造成连环雷击。',
@@ -377,7 +356,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   破阵枪: {
     id: '破阵枪',
     name: '破阵枪',
-    coreWord: '枪',
+    words: ['枪'],
     type: 'melee',
     description: '丈八长枪，直线贯刺，破阵当先。',
     summary: '超远距离直线突刺，攻击侧敌人受击硬直。',
@@ -392,8 +371,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   灵木枪: {
     id: '灵木枪',
     name: '灵木长枪',
-    prefixWord: '木',
-    coreWord: '枪',
+    words: ['木', '枪'],
     type: 'melee',
     description: '灵木为杆，刚柔并济，连环疾刺破甲。',
     summary: '攻速 +30%，枪出如龙，连续直刺贯穿敌阵。',
@@ -408,8 +386,7 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
   开山斧: {
     id: '开山斧',
     name: '开山巨斧',
-    prefixWord: '石',
-    coreWord: '斧',
+    words: ['石', '斧'],
     type: 'melee',
     description: '厚重开山斧，重劈落地引发剧烈地震波。',
     summary: '极高伤害与击退，下砸产生大范围冲击波。',
@@ -419,6 +396,21 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
       range: 140,
       knockback: 280,
       element: 'earth',
+    },
+  },
+  风火刃: {
+    id: '风火刃',
+    name: '风火刃',
+    words: ['风', '火', '刀'],
+    type: 'melee',
+    description: '风助火势，烈风席卷炽热刀芒。',
+    summary: '攻速 +40%，挥斩附带烈焰与风刃双重爆发。',
+    stats: {
+      damage: 32,
+      attackSpeed: 1.4,
+      range: 135,
+      knockback: 150,
+      element: 'fire',
     },
   },
 };
@@ -489,11 +481,12 @@ function sanitizeInventory(value?: Partial<Inventory>): Inventory {
 function defaultMeta(): MetaState {
   return {
     inventory: { '一': 4, '丨': 3, '丿': 4, '㇏': 3, '丶': 4, '㇇': 3 },
-    unlockedWords: ['刀', '木', '十'],
-    equippedWords: ['刀'],
-    unlockedWeapons: ['基础刀', '木刀'],
+    wordInventory: {},
+    unlockedWords: [],
+    equippedWords: [],
+    unlockedWeapons: ['木刀'],
     equippedWeapon: '木刀',
-    recipeBook: ['刀', '木', '十'],
+    recipeBook: [],
     victories: 0,
   };
 }
@@ -579,6 +572,9 @@ class GameState {
       this.meta.inventory[s] -= needed;
     }
 
+    // Add to wordInventory
+    this.meta.wordInventory[wordId] = (this.meta.wordInventory[wordId] || 0) + 1;
+
     // Unlock word & recipe book
     if (!this.meta.unlockedWords.includes(wordId)) {
       this.meta.unlockedWords.push(wordId);
@@ -591,6 +587,42 @@ class GameState {
     return wordId;
   }
 
+  getWordRecipe(wordId: WordId): Partial<Inventory> {
+    if (wordId in WORDS) {
+      return WORDS[wordId as keyof typeof WORDS].recipe;
+    }
+    const seq = strokeService.getStrokeSequence(wordId);
+    if (!seq) {
+      return { '一': 1 };
+    }
+    const recipe: Partial<Inventory> = {};
+    for (const s of seq) {
+      let strokeKey: Stroke;
+      if (s === 'h') strokeKey = '一';
+      else if (s === 's') strokeKey = '丨';
+      else if (s === 'p') strokeKey = '丿';
+      else if (s === 'z') strokeKey = '㇇';
+      else if (s === 'n') strokeKey = '丶';
+      else strokeKey = '一';
+
+      recipe[strokeKey] = (recipe[strokeKey] || 0) + 1;
+    }
+    return recipe;
+  }
+
+  getWordDefinition(wordId: WordId): WordDefinition {
+    if (wordId in WORDS) {
+      return WORDS[wordId as keyof typeof WORDS];
+    }
+    return {
+      id: wordId,
+      name: wordId,
+      type: '造化字',
+      summary: '笔墨天成，自生意蕴。',
+      recipe: this.getWordRecipe(wordId),
+    };
+  }
+
   /**
    * Checks whether a recognized character can be synthesized based on inventory strokes.
    */
@@ -600,12 +632,7 @@ class GameState {
     missing?: Partial<Inventory>;
     recipe: Partial<Inventory>;
   } {
-    const def = WORDS[wordId];
-    if (!def) {
-      return { canSynthesize: false, error: '此字尚未收录至兵道真言', recipe: {} };
-    }
-
-    const recipe = def.recipe;
+    const recipe = this.getWordRecipe(wordId);
     const missing: Partial<Inventory> = {};
     let can = true;
 
@@ -634,10 +661,12 @@ class GameState {
     const check = this.canSynthesizeCharacter(wordId);
     if (!check.canSynthesize) return false;
 
-    const def = WORDS[wordId];
-    for (const [stroke, needed] of Object.entries(def.recipe) as [Stroke, number][]) {
+    for (const [stroke, needed] of Object.entries(check.recipe) as [Stroke, number][]) {
       this.meta.inventory[stroke] -= needed;
     }
+
+    // Add to wordInventory
+    this.meta.wordInventory[wordId] = (this.meta.wordInventory[wordId] || 0) + 1;
 
     if (!this.meta.unlockedWords.includes(wordId)) {
       this.meta.unlockedWords.push(wordId);
@@ -650,19 +679,61 @@ class GameState {
     return true;
   }
 
-  canForgeWeapon(prefix: WordId, core: WordId): CompoundWeaponId | undefined {
+  /**
+   * Matches any weapon whose required words match the given words (order-independent).
+   */
+  canForgeWeapon(words: WordId[]): CompoundWeaponId | undefined {
+    if (!words || words.length === 0) return undefined;
+    const sortedInput = [...words].sort().join(',');
+
     for (const [wId, weapon] of Object.entries(COMPOUND_WEAPONS) as [CompoundWeaponId, CompoundWeapon][]) {
-      if (weapon.prefixWord === prefix && weapon.coreWord === core) {
+      const sortedRecipe = [...weapon.words].sort().join(',');
+      if (sortedInput === sortedRecipe) {
         return wId;
       }
     }
     return undefined;
   }
 
-  forgeWeapon(prefix: WordId, core: WordId): CompoundWeaponId | undefined {
-    const weaponId = this.canForgeWeapon(prefix, core);
-    if (!weaponId) return undefined;
+  canPlayerForgeWeapon(words: WordId[]): { weaponId?: CompoundWeaponId; error?: string } {
+    if (!words || words.length === 0) {
+      return { error: '请放入字进行锻造' };
+    }
 
+    const weaponId = this.canForgeWeapon(words);
+    if (!weaponId) {
+      return { error: '当前汉字组合尚未参透武器真意' };
+    }
+
+    // Check if player has enough of each word in wordInventory
+    const neededCounts: Partial<Record<WordId, number>> = {};
+    for (const w of words) neededCounts[w] = (neededCounts[w] || 0) + 1;
+
+    for (const [w, count] of Object.entries(neededCounts) as [WordId, number][]) {
+      const have = this.meta.wordInventory[w] ?? 0;
+      if (have < count) {
+        return { error: `字「${w}」存量不足 (需 ${count}，拥有 ${have})` };
+      }
+    }
+
+    return { weaponId };
+  }
+
+  forgeWeapon(words: WordId[]): CompoundWeaponId | undefined {
+    const check = this.canPlayerForgeWeapon(words);
+    if (!check.weaponId) return undefined;
+
+    // Deduct words from wordInventory
+    for (const w of words) {
+      if (this.meta.wordInventory[w]) {
+        this.meta.wordInventory[w] -= 1;
+        if (this.meta.wordInventory[w] <= 0) {
+          delete this.meta.wordInventory[w];
+        }
+      }
+    }
+
+    const weaponId = check.weaponId;
     if (!this.meta.unlockedWeapons.includes(weaponId)) {
       this.meta.unlockedWeapons.push(weaponId);
     }
@@ -679,11 +750,11 @@ class GameState {
   }
 
   getEquippedWeapon(): CompoundWeapon {
-    return COMPOUND_WEAPONS[this.meta.equippedWeapon] || COMPOUND_WEAPONS.基础刀;
+    return COMPOUND_WEAPONS[this.meta.equippedWeapon] || COMPOUND_WEAPONS.木刀;
   }
 
   hasWord(word: WordId): boolean {
-    return this.meta.unlockedWords.includes(word);
+    return (this.meta.wordInventory[word] ?? 0) > 0;
   }
 
   settle(outcome: RunOutcome): Settlement {
@@ -712,19 +783,29 @@ class GameState {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<MetaState>;
-      const unlockedWords = parsed.unlockedWords?.filter((w): w is WordId => w in WORDS) ?? ['刀', '木', '十'];
-      const unlockedWeapons = parsed.unlockedWeapons?.filter((w): w is CompoundWeaponId => w in COMPOUND_WEAPONS) ?? ['基础刀', '木刀'];
+      const unlockedWords = parsed.unlockedWords ?? [];
+      const unlockedWeapons = parsed.unlockedWeapons?.filter((w): w is CompoundWeaponId => w in COMPOUND_WEAPONS) ?? ['木刀'];
       const equippedWeapon = (parsed.equippedWeapon && parsed.equippedWeapon in COMPOUND_WEAPONS)
         ? parsed.equippedWeapon
         : '木刀';
 
+      const wordInventory: Partial<Record<WordId, number>> = {};
+      if (parsed.wordInventory) {
+        for (const [w, count] of Object.entries(parsed.wordInventory)) {
+          if (typeof count === 'number' && count > 0) {
+            wordInventory[w as WordId] = Math.floor(count);
+          }
+        }
+      }
+
       this.meta = {
         inventory: sanitizeInventory(parsed.inventory),
+        wordInventory,
         unlockedWords,
         equippedWords: unlockedWords,
         unlockedWeapons,
         equippedWeapon,
-        recipeBook: parsed.recipeBook?.filter((w): w is WordId => w in WORDS) ?? unlockedWords,
+        recipeBook: parsed.recipeBook ?? unlockedWords,
         victories: Math.max(0, Math.floor(Number(parsed.victories) || 0)),
       };
     } catch {

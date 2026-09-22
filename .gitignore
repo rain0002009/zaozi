@@ -6,3 +6,6 @@ dist
 
 # Generated character visual checks; keep the Markdown tickets and test script.
 .scratch/character-art/*.png
+
+tmp/
+scratch/
