@@ -49,20 +49,9 @@ export type CompoundWeapon = {
   };
 };
 
-export type RouteId = 'wilds' | 'ruins' | 'ember' | 'rift' | 'boss';
+export * from './RouteState';
 export type RunOutcome = 'retreat' | 'defeat' | 'victory';
 export type Inventory = Record<Stroke, number>;
-
-export type RouteDefinition = {
-  id: RouteId;
-  title: string;
-  subtitle: string;
-  danger: string;
-  description: string;
-  enemyBonus: number;
-  lootMultiplier: number;
-  accent: number;
-};
 
 export type Expedition = {
   area: number;
@@ -412,59 +401,6 @@ export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
       knockback: 150,
       element: 'fire',
     },
-  },
-};
-
-export const ROUTES: Record<RouteId, RouteDefinition> = {
-  wilds: {
-    id: 'wilds',
-    title: '枯字荒原',
-    subtitle: '普通战斗',
-    danger: '平稳',
-    description: '游荡的狼群盘踞荒原，主要掉落「丿」「㇏」笔画。',
-    enemyBonus: 0,
-    lootMultiplier: 1,
-    accent: 0x6e9b78,
-  },
-  ruins: {
-    id: 'ruins',
-    title: '残碑林',
-    subtitle: '搜刮战斗',
-    danger: '中等',
-    description: '残碑孕育更多字灵，主要掉落「一」「丨」笔画。',
-    enemyBonus: 2,
-    lootMultiplier: 1.45,
-    accent: 0xb69a61,
-  },
-  ember: {
-    id: 'ember',
-    title: '妖火泽',
-    subtitle: '远程战斗',
-    danger: '危险',
-    description: '水妖与火狼交错，主要掉落「丶」「㇇」笔画。',
-    enemyBonus: 1,
-    lootMultiplier: 1.3,
-    accent: 0xc86f59,
-  },
-  rift: {
-    id: 'rift',
-    title: '断墨窟',
-    subtitle: '精英战斗',
-    danger: '极险',
-    description: '山鬼成群冲锋，获得的珍贵笔画数量显著提高。',
-    enemyBonus: 3,
-    lootMultiplier: 1.8,
-    accent: 0x8d6b9f,
-  },
-  boss: {
-    id: 'boss',
-    title: '墨池核心',
-    subtitle: '区域 Boss',
-    danger: '首领',
-    description: '击败「墨」，带着全部战利品返回基地。',
-    enemyBonus: 0,
-    lootMultiplier: 2.2,
-    accent: 0x9b3f48,
   },
 };
 
