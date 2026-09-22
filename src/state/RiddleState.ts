@@ -8,11 +8,13 @@ export type CharacterRiddle = {
   targetWord: string;
   hint1: string; // 结构/部首线索
   hint2: string; // 字义/组词线索
+  recipe: Partial<Inventory>;
 };
 
 export type RiddleSession = {
   riddle: CharacterRiddle;
   unlockedHints: number; // 0, 1, 2
+  isUnlocked: boolean;
 };
 
 export const CHARACTER_RIDDLES: CharacterRiddle[] = [
@@ -22,6 +24,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '告',
     hint1: '上下结构，口字底',
     hint2: '意为告知、宣告、报告',
+    recipe: { '丿': 1, '一': 3, '丨': 2, '㇇': 1 },
   },
   {
     id: 'riddle-na',
@@ -29,6 +32,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '拿',
     hint1: '上下结构，合手为一',
     hint2: '意为捉拿、拿取、掌管',
+    recipe: { '丿': 2, '㇏': 1, '一': 3, '丨': 2, '㇇': 2 },
   },
   {
     id: 'riddle-shan',
@@ -36,6 +40,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '闪',
     hint1: '半包围结构，门字框内藏人',
     hint2: '意为闪电、闪烁、闪避',
+    recipe: { '丶': 1, '丨': 1, '㇇': 1, '丿': 1, '㇏': 1 },
   },
   {
     id: 'riddle-jie',
@@ -43,6 +48,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '借',
     hint1: '左右结构，单人旁加昔',
     hint2: '意为借用、假借、借贷',
+    recipe: { '丿': 1, '丨': 4, '一': 4, '㇇': 1 },
   },
   {
     id: 'riddle-fu',
@@ -50,6 +56,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '夫',
     hint1: '独体字，二人合一',
     hint2: '意为匹夫、大夫、勇夫',
+    recipe: { '一': 2, '丿': 1, '㇏': 1 },
   },
   {
     id: 'riddle-yu',
@@ -57,6 +64,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '雨',
     hint1: '独体字，天降甘霖',
     hint2: '意为雨水、疾风骤雨',
+    recipe: { '一': 1, '丨': 2, '㇇': 1, '丶': 4 },
   },
   {
     id: 'riddle-ka',
@@ -64,6 +72,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '卡',
     hint1: '上下结构，有上又有下',
     hint2: '意为关卡、卡片、卡死',
+    recipe: { '丨': 2, '一': 1, '丶': 1 },
   },
   {
     id: 'riddle-sheng',
@@ -71,6 +80,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '省',
     hint1: '上下结构，少字头与目字底',
     hint2: '意为省悟、反省、节省',
+    recipe: { '丨': 2, '丿': 2, '丶': 1, '㇇': 1, '一': 3 },
   },
   {
     id: 'riddle-yan',
@@ -78,6 +88,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '炎',
     hint1: '上下结构，重火之相',
     hint2: '意为炎热、赤炎、烈焰',
+    recipe: { '丶': 2, '丿': 4, '㇏': 2 },
   },
   {
     id: 'riddle-lin',
@@ -85,6 +96,7 @@ export const CHARACTER_RIDDLES: CharacterRiddle[] = [
     targetWord: '林',
     hint1: '左右结构，双木并立',
     hint2: '意为树林、森林、绿林',
+    recipe: { '一': 2, '丨': 2, '丿': 2, '丶': 1, '㇏': 1 },
   },
 ];
 
@@ -97,6 +109,7 @@ export function createRiddleSession(riddle?: CharacterRiddle): RiddleSession {
   return {
     riddle: riddle ?? getRandomRiddle(),
     unlockedHints: 0,
+    isUnlocked: false,
   };
 }
 
@@ -108,7 +121,6 @@ export function unlockNextHint(
     return { success: false, reason: '所有线索已揭示' };
   }
 
-  // Find a stroke in carried with quantity > 0 (prefer stroke with highest count)
   let chosenStroke: Stroke | undefined;
   for (const stroke of STROKES) {
     if ((carried[stroke] ?? 0) > 0) {
@@ -125,6 +137,44 @@ export function unlockNextHint(
   carried[chosenStroke] -= 1;
   session.unlockedHints += 1;
   return { success: true, consumedStroke: chosenStroke };
+}
+
+export function verifyAndUnlockGate(
+  session: RiddleSession,
+  submittedWord: string,
+  carried: Inventory
+): { success: boolean; reason?: string; consumedStrokes?: Partial<Inventory> } {
+  if (session.isUnlocked) {
+    return { success: true, reason: '石门已开启' };
+  }
+
+  if (submittedWord !== session.riddle.targetWord) {
+    return { success: false, reason: '碑文无应，此字非钥' };
+  }
+
+  const recipe = session.riddle.recipe;
+  const missingStrokes: string[] = [];
+
+  for (const [stroke, count] of Object.entries(recipe) as [Stroke, number][]) {
+    if ((carried[stroke] ?? 0) < count) {
+      missingStrokes.push(`「${stroke}」缺 ${count - (carried[stroke] ?? 0)}`);
+    }
+  }
+
+  if (missingStrokes.length > 0) {
+    return {
+      success: false,
+      reason: `携带笔画不足，无法凝符开门（${missingStrokes.join('，')}）`,
+    };
+  }
+
+  // Deduct strokes
+  for (const [stroke, count] of Object.entries(recipe) as [Stroke, number][]) {
+    carried[stroke] -= count;
+  }
+
+  session.isUnlocked = true;
+  return { success: true, consumedStrokes: { ...recipe } };
 }
 
 export function abandonRiddle(expedition?: { route?: string }): void {

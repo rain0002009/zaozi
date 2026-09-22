@@ -10,6 +10,7 @@
     "build:character-rig": "node scripts/build_character_rig_assets.cjs",
     "test:routes": "node --experimental-strip-types --test scripts/route-generation.test.mjs",
     "test:riddle": "node --experimental-strip-types --test scripts/riddle-stele.test.mjs",
+    "test:crafting": "node --experimental-strip-types --test scripts/riddle-crafting.test.mjs",
     "test:motion": "node --experimental-strip-types --test scripts/character-motion.test.mjs",
     "test:attack-motion": "node --experimental-strip-types --test scripts/character-attack-motion.test.mjs",
     "test:rig": "node --experimental-strip-types --test scripts/character-rig.test.mjs",
