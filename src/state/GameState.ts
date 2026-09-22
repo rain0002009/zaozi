@@ -49,8 +49,9 @@ export type CompoundWeapon = {
   };
 };
 
-import { RouteId, RouteDefinition, ROUTES, generateRouteOptions } from './RouteState';
-export * from './RouteState';
+import { type RouteId, type RouteDefinition, ROUTES, generateRouteOptions } from './RouteState';
+export type { RouteId, RouteDefinition };
+export { ROUTES, generateRouteOptions };
 export type RunOutcome = 'retreat' | 'defeat' | 'victory';
 export type Inventory = Record<Stroke, number>;
 

@@ -20,6 +20,7 @@ type Enemy = {
   attackCooldown: number;
   stateTimer: number;
   velocity: Phaser.Math.Vector2;
+  hitStun: number;
 };
 
 type Projectile = {
@@ -76,6 +77,7 @@ export class GameScene extends Phaser.Scene {
   private pauseOverlay?: Phaser.GameObjects.Container;
   private knifeTrail!: Phaser.GameObjects.Graphics;
   private knifeTrailPoints: TrailPoint[] = [];
+  private hitstopRemaining = 0;
 
   constructor() { super('Game'); }
 
@@ -217,7 +219,13 @@ export class GameScene extends Phaser.Scene {
   private spawnEnemy(kind: EnemyKind, name: string, x: number, y: number): void {
     const area = gameState.expedition?.area ?? 1;
     const isBoss = kind === 'boss';
-    const maxHp = isBoss ? 30 : kind === 'charger' ? 5 + area : kind === 'ranged' ? 3 + area : 3 + area;
+    const maxHp = isBoss
+      ? 180 + (area - 1) * 40
+      : kind === 'charger'
+      ? 46 + (area - 1) * 12
+      : kind === 'ranged'
+      ? 26 + (area - 1) * 8
+      : 28 + (area - 1) * 8;
     const radius = isBoss ? 46 : 23;
     const color = isBoss ? 0x29252c : kind === 'ranged' ? 0x547d86 : kind === 'charger' ? 0x765f55 : name.includes('火') ? 0xb95b49 : 0x5f6b62;
     const body = this.add.container(x, y).setDepth(4);
@@ -233,6 +241,7 @@ export class GameScene extends Phaser.Scene {
       damage: isBoss ? 18 : name.includes('火') ? 12 : 9,
       attackCooldown: Phaser.Math.Between(500, 1100), stateTimer: Phaser.Math.Between(900, 1800),
       velocity: new Phaser.Math.Vector2(),
+      hitStun: 0,
     });
   }
 
@@ -268,6 +277,103 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private spawnSlashArc(attack: AttackEvent): void {
+    const weapon = gameState.getEquippedWeapon();
+    const attackSpec = KNIFE_COMBO.attacks[attack.comboStep - 1];
+    const facingSign = attack.side === 'left' ? -1 : 1;
+    const baseAngle = attack.side === 'left' ? Math.PI : 0;
+    const range = weapon.stats.range * (attackSpec.range / 105);
+
+    const colors: Record<string, { main: number; core: number }> = {
+      wood: { main: 0x48b868, core: 0xc4ffd5 },
+      fire: { main: 0xe24a22, core: 0xffe27a },
+      metal: { main: 0xebc446, core: 0xfffae0 },
+      earth: { main: 0xa67c4d, core: 0xf5e8d5 },
+      water: { main: 0x3bbad9, core: 0xd9f7ff },
+      none: { main: 0x9faea4, core: 0xf0f5f2 },
+    };
+    const c = colors[weapon.stats.element] ?? colors.none;
+
+    const arcGfx = this.add.graphics().setDepth(8);
+    arcGfx.setPosition(this.player.x, this.player.y);
+
+    if (attack.comboStep === 1) {
+      // Step 1: Downward Slash Arc (半月下劈)
+      const startDeg = -65;
+      const endDeg = 55;
+      const startRad = baseAngle + Phaser.Math.DegToRad(startDeg * facingSign);
+      const endRad = baseAngle + Phaser.Math.DegToRad(endDeg * facingSign);
+
+      arcGfx.lineStyle(6, c.main, 0.75);
+      arcGfx.beginPath();
+      arcGfx.arc(0, 0, range, Math.min(startRad, endRad), Math.max(startRad, endRad), false);
+      arcGfx.strokePath();
+
+      arcGfx.lineStyle(2.5, c.core, 0.95);
+      arcGfx.beginPath();
+      arcGfx.arc(0, 0, range * 0.96, Math.min(startRad, endRad), Math.max(startRad, endRad), false);
+      arcGfx.strokePath();
+
+      arcGfx.fillStyle(c.main, 0.22);
+      arcGfx.beginPath();
+      arcGfx.moveTo(0, 0);
+      arcGfx.arc(0, 0, range, Math.min(startRad, endRad), Math.max(startRad, endRad), false);
+      arcGfx.closePath();
+      arcGfx.fillPath();
+    } else if (attack.comboStep === 2) {
+      // Step 2: Rising Cut Arc (反手上挑)
+      const startDeg = 60;
+      const endDeg = -50;
+      const startRad = baseAngle + Phaser.Math.DegToRad(startDeg * facingSign);
+      const endRad = baseAngle + Phaser.Math.DegToRad(endDeg * facingSign);
+
+      arcGfx.lineStyle(5, c.main, 0.75);
+      arcGfx.beginPath();
+      arcGfx.arc(0, 0, range * 0.95, Math.min(startRad, endRad), Math.max(startRad, endRad), false);
+      arcGfx.strokePath();
+
+      arcGfx.lineStyle(2, c.core, 0.95);
+      arcGfx.beginPath();
+      arcGfx.arc(0, 0, range * 0.91, Math.min(startRad, endRad), Math.max(startRad, endRad), false);
+      arcGfx.strokePath();
+
+      arcGfx.fillStyle(c.main, 0.2);
+      arcGfx.beginPath();
+      arcGfx.moveTo(0, 0);
+      arcGfx.arc(0, 0, range * 0.95, Math.min(startRad, endRad), Math.max(startRad, endRad), false);
+      arcGfx.closePath();
+      arcGfx.fillPath();
+    } else {
+      // Step 3: Finisher Thrust Shockwave / Piercing Ink Cone (突刺气浪)
+      const tipX = facingSign * range;
+      arcGfx.fillStyle(c.main, 0.28);
+      arcGfx.beginPath();
+      arcGfx.moveTo(facingSign * 10, -8);
+      arcGfx.lineTo(tipX * 1.05, 0);
+      arcGfx.lineTo(facingSign * 10, 8);
+      arcGfx.closePath();
+      arcGfx.fillPath();
+
+      arcGfx.lineStyle(4, c.core, 0.95);
+      arcGfx.lineBetween(facingSign * 12, 0, tipX * 1.1, 0);
+
+      arcGfx.lineStyle(7, c.main, 0.8);
+      arcGfx.beginPath();
+      arcGfx.arc(tipX * 0.75, 0, 32, baseAngle - 1.1, baseAngle + 1.1, false);
+      arcGfx.strokePath();
+    }
+
+    this.tweens.add({
+      targets: arcGfx,
+      scaleX: 1.12,
+      scaleY: 1.12,
+      alpha: 0,
+      duration: 160,
+      ease: 'Quad.easeOut',
+      onComplete: () => arcGfx.destroy(),
+    });
+  }
+
   private resolveMeleeHit(attack: AttackEvent): void {
     const weapon = gameState.getEquippedWeapon();
     const attackSpec = KNIFE_COMBO.attacks[attack.comboStep - 1];
@@ -284,10 +390,15 @@ export class GameScene extends Phaser.Scene {
         && Math.abs(Phaser.Math.Angle.Wrap(angle - attackAngle)) < Phaser.Math.DegToRad(attackSpec.arcDegrees / 2);
     });
 
+    if (hits.length > 0) {
+      this.hitstopRemaining = 40;
+      this.cameras.main.shake(attack.comboStep === 3 ? 90 : 45, attack.comboStep === 3 ? 0.005 : 0.002);
+    }
+
     hits.forEach((enemy) => {
-      this.damageEnemy(enemy, damage, attackAngle, knockback);
+      this.damageEnemy(enemy, damage, attackAngle, knockback, attack.comboStep);
       if (weapon.stats.element === 'fire') {
-        this.damageEnemy(enemy, Math.round(damage * 0.35), attackAngle, 4);
+        this.damageEnemy(enemy, Math.round(damage * 0.35), attackAngle, 4, attack.comboStep);
         const burst = this.add.circle(enemy.body.x, enemy.body.y, 22, 0xe84a22, 0.5).setDepth(8);
         this.tweens.add({ targets: burst, alpha: 0, scale: 1.8, duration: 240, onComplete: () => burst.destroy() });
       } else if (weapon.stats.element === 'earth') {
@@ -295,8 +406,6 @@ export class GameScene extends Phaser.Scene {
         enemy.attackCooldown += 700;
       }
     });
-
-    if (attack.comboStep === 3 && hits.length > 0) this.cameras.main.shake(80, 0.003);
   }
 
   private updateKnifeTrail(delta: number): void {
@@ -352,18 +461,19 @@ export class GameScene extends Phaser.Scene {
     const body = this.add.container(this.player.x + velocity.x * 0.08, this.player.y + velocity.y * 0.08).setDepth(7);
     body.add(this.add.circle(0, 0, 15, 0xd85d3f, 0.24));
     body.add(this.add.text(0, 0, '火', { fontFamily: 'serif', fontSize: '24px', color: '#d44930' }).setOrigin(0.5));
-    this.projectiles.push({ body, velocity, hostile: false, damage: 3, ttl: 1600 });
+    this.projectiles.push({ body, velocity, hostile: false, damage: 14, ttl: 1600 });
   }
 
-  private damageEnemy(enemy: Enemy, damage: number, knockbackAngle: number, knockback = 16): void {
+  private damageEnemy(enemy: Enemy, damage: number, knockbackAngle: number, knockback = 16, comboStep = 1): void {
     if (!enemy.body.active) return;
     enemy.hp -= damage;
     enemy.healthFill.scaleX = Math.max(0, enemy.hp / enemy.maxHp);
     const appliedKnockback = enemy.kind === 'boss' ? Math.min(5, knockback) : knockback;
     enemy.body.x += Math.cos(knockbackAngle) * appliedKnockback;
     enemy.body.y += Math.sin(knockbackAngle) * appliedKnockback;
-    enemy.body.setAlpha(0.42);
-    this.time.delayedCall(80, () => enemy.body.active && enemy.body.setAlpha(1));
+    enemy.hitStun = comboStep === 3 ? 320 : 200;
+    enemy.body.setAlpha(0.35);
+    this.time.delayedCall(90, () => enemy.body.active && enemy.body.setAlpha(1));
     if (enemy.hp <= 0) this.killEnemy(enemy);
   }
 
@@ -465,6 +575,11 @@ export class GameScene extends Phaser.Scene {
 
   private updateEnemies(delta: number): void {
     for (const enemy of [...this.enemies]) {
+      if (enemy.hitStun > 0) {
+        enemy.hitStun -= delta;
+        enemy.body.setAlpha(0.55);
+        continue;
+      }
       enemy.attackCooldown -= delta;
       enemy.stateTimer -= delta;
       const toPlayer = new Phaser.Math.Vector2(this.player.x - enemy.body.x, this.player.y - enemy.body.y);
@@ -730,7 +845,10 @@ export class GameScene extends Phaser.Scene {
     const attack = this.character.update(delta, direction, displacement, this.aimAngle);
     this.player.x = Phaser.Math.Clamp(this.player.x + this.character.rootMotion(delta), 72, 952);
     this.updateKnifeTrail(delta);
-    if (attack) this.resolveMeleeHit(attack);
+    if (attack) {
+      this.spawnSlashArc(attack);
+      this.resolveMeleeHit(attack);
+    }
   }
 
   private togglePause(): void {
@@ -766,6 +884,10 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (Phaser.Input.Keyboard.JustDown(this.pauseKey)) this.togglePause();
     if (this.ended || this.paused) return;
+    if (this.hitstopRemaining > 0) {
+      this.hitstopRemaining -= delta;
+      return;
+    }
     if (Phaser.Input.Keyboard.JustDown(this.fireKey)) this.castFire();
     this.fireCooldown = Math.max(0, this.fireCooldown - delta);
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta);
