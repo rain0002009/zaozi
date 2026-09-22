@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { KNIFE_COMBO } from '../combat/WeaponCombo';
 import { AttackEvent, PlayerCharacter } from '../entities/PlayerCharacter';
 import { gameState, ROUTES, RouteDefinition, Stroke, STROKES } from '../state/GameState';
+import { resolveTrialVictory, handleTrialFatalDamage } from '../state/RiddleState';
 
 type EnemyKind = 'chaser' | 'ranged' | 'charger' | 'boss';
 type EnemyState = 'hunt' | 'windup' | 'charge';
@@ -180,6 +181,11 @@ export class GameScene extends Phaser.Scene {
     if (this.route.id === 'boss') {
       this.spawnEnemy('boss', '墨', 512, 276);
       this.statusText.setText('「墨」正在吞噬残存的笔画');
+      return;
+    }
+    if (this.route.id === 'secret_riddle') {
+      this.spawnEnemy('boss', '字阵守护兽', 512, 276);
+      this.statusText.setText('【死斗试炼】字阵守护兽苏醒！战胜赢取翻倍至宝！');
       return;
     }
 
@@ -412,6 +418,20 @@ export class GameScene extends Phaser.Scene {
     this.ended = true;
     if (gameState.expedition) gameState.expedition.hp = this.hp;
     const isVictory = this.route.id === 'boss';
+    const isSecretTrial = this.route.id === 'secret_riddle';
+    if (isSecretTrial && gameState.expedition) {
+      const reward = resolveTrialVictory(gameState.expedition, gameState.meta);
+      const overlay = this.add.container(512, 390).setDepth(30);
+      overlay.add(this.add.rectangle(0, 0, 1024, 780, 0x101612, 0.76));
+      overlay.add(this.add.rectangle(0, 0, 560, 310, 0xe6dfcc, 0.99).setStrokeStyle(3, 0xd4af37));
+      overlay.add(this.add.text(0, -105, '试 炼 大 捷', { fontFamily: 'serif', fontSize: '38px', color: '#8a621c' }).setOrigin(0.5));
+      overlay.add(this.add.text(0, -48, `战胜字阵守护兽！翻倍顶级至宝与绝品「${reward.weapon}」已入行囊！`, { fontSize: '15px', color: '#4d4334' }).setOrigin(0.5));
+      overlay.add(this.makeActionButton(0, 64, '携宝继续出征', () => {
+        this.scene.start('Route');
+      }));
+      return;
+    }
+
     const overlay = this.add.container(512, 390).setDepth(30);
     overlay.add(this.add.rectangle(0, 0, 1024, 780, 0x101612, 0.76));
     overlay.add(this.add.rectangle(0, 0, 520, 310, 0xe6dfcc, 0.99).setStrokeStyle(3, this.route.accent));
@@ -565,8 +585,49 @@ export class GameScene extends Phaser.Scene {
     this.invulnerableUntil = this.time.now + 520;
     this.character.startHurt(incomingAngle);
     this.createInkSpatter(incomingAngle);
-    this.cameras.main.shake(120, 0.005);
-    if (this.hp <= 0) this.gameOver();
+    if (this.hp <= 0) {
+      if (this.route.id === 'secret_riddle') {
+        this.triggerTrialEscape();
+        return;
+      }
+      this.gameOver();
+    }
+  }
+
+  private triggerTrialEscape(): void {
+    this.ended = true;
+    const run = gameState.expedition;
+    if (run) {
+      handleTrialFatalDamage(run);
+    }
+    this.hp = 1;
+    this.character.startHurt(0);
+    this.cameras.main.flash(500, 212, 175, 55);
+
+    const overlay = this.add.container(512, 390).setDepth(30);
+    overlay.add(this.add.rectangle(0, 0, 1024, 780, 0x0b100c, 0.88));
+    overlay.add(
+      this.add
+        .text(0, -70, '古 碑 替 命 · 强 行 遁 离', {
+          fontFamily: 'serif',
+          fontSize: '40px',
+          color: '#e2c56a',
+        })
+        .setOrigin(0.5)
+    );
+    overlay.add(
+      this.add
+        .text(0, -10, '试炼凶险，古碑护体禁制触发！保留 1 点气血遁出秘境，出征不中断！', {
+          fontSize: '16px',
+          color: '#d6ded4',
+        })
+        .setOrigin(0.5)
+    );
+    overlay.add(
+      this.makeActionButton(0, 68, '继续出征 (返回选路)', () =>
+        this.scene.start('Route')
+      )
+    );
   }
 
   private createInkSpatter(angle: number): void {

@@ -181,3 +181,66 @@ export function abandonRiddle(expedition?: { route?: string }): void {
   if (!expedition) return;
   expedition.route = undefined;
 }
+
+export function claimSafeSanctuaryReward(
+  expedition: { area: number; hp: number; carried: Inventory; route?: string },
+  meta: { unlockedWeapons: string[]; equippedWeapon: string }
+): { strokes: Partial<Inventory>; weapon: string } {
+  const rewardStrokes: Partial<Inventory> = {
+    '丶': 2,
+    '㇇': 2,
+    '㇏': 2,
+    '一': 1,
+  };
+
+  for (const [s, n] of Object.entries(rewardStrokes) as [Stroke, number][]) {
+    expedition.carried[s] = (expedition.carried[s] ?? 0) + n;
+  }
+
+  const weapon = '炎刀';
+  if (!meta.unlockedWeapons.includes(weapon)) {
+    meta.unlockedWeapons.push(weapon);
+  }
+  meta.equippedWeapon = weapon;
+
+  expedition.area += 1;
+  expedition.route = undefined;
+
+  return { strokes: rewardStrokes, weapon };
+}
+
+export function resolveTrialVictory(
+  expedition: { area: number; hp: number; carried: Inventory; route?: string },
+  meta: { unlockedWeapons: string[]; equippedWeapon: string }
+): { strokes: Partial<Inventory>; weapon: string } {
+  const rewardStrokes: Partial<Inventory> = {
+    '丶': 4,
+    '㇇': 4,
+    '㇏': 4,
+    '一': 2,
+  };
+
+  for (const [s, n] of Object.entries(rewardStrokes) as [Stroke, number][]) {
+    expedition.carried[s] = (expedition.carried[s] ?? 0) + n;
+  }
+
+  const weapon = '风火刃';
+  if (!meta.unlockedWeapons.includes(weapon)) {
+    meta.unlockedWeapons.push(weapon);
+  }
+  meta.equippedWeapon = weapon;
+
+  expedition.area += 1;
+  expedition.route = undefined;
+
+  return { strokes: rewardStrokes, weapon };
+}
+
+export function handleTrialFatalDamage(
+  expedition: { area: number; hp: number; carried: Inventory; route?: string }
+): { survived: boolean; finalHp: number } {
+  expedition.hp = 1;
+  expedition.area += 1;
+  expedition.route = undefined;
+  return { survived: true, finalHp: 1 };
+}

@@ -6,6 +6,7 @@ import {
   unlockNextHint,
   abandonRiddle,
   verifyAndUnlockGate,
+  claimSafeSanctuaryReward,
 } from '../state/RiddleState';
 import { handwritingService } from '../services/HandwritingService';
 
@@ -223,7 +224,7 @@ export class SecretRiddleScene extends Phaser.Scene {
 
     this.solveBtn.on('pointerdown', () => {
       if (this.session.isUnlocked) {
-        this.statusText.setText('石门已开启，正在踏入秘境殿堂...');
+        this.showSanctuaryHall();
         return;
       }
       this.openCalligraphyModal();
@@ -579,5 +580,107 @@ export class SecretRiddleScene extends Phaser.Scene {
     this.time.delayedCall(1200, () => {
       this.closeCalligraphyModal();
     });
+  }
+
+  private sanctuaryContainer?: Phaser.GameObjects.Container;
+
+  private showSanctuaryHall(): void {
+    if (this.sanctuaryContainer) {
+      this.sanctuaryContainer.setVisible(true);
+      return;
+    }
+
+    this.solveBtn.setVisible(false);
+    this.statusText.setVisible(false);
+
+    this.sanctuaryContainer = this.add.container(0, 0);
+
+    const darkBg = this.add.graphics();
+    darkBg.fillStyle(0x111613, 0.95).fillRect(0, 140, 1024, 628);
+    this.sanctuaryContainer.add(darkBg);
+
+    const title = this.add.text(512, 175, '秘 境 殿 堂 · 双 径 抉 择', {
+      fontFamily: 'serif',
+      fontSize: '32px',
+      color: '#f5e8cf',
+    }).setOrigin(0.5);
+    const sub = this.add.text(512, 215, '古碑已开，面前浮现两座神龛。稳健取宝或搏命死斗，全在一念之间。', {
+      fontSize: '15px',
+      color: '#9aa89a',
+    }).setOrigin(0.5);
+    this.sanctuaryContainer.add([title, sub]);
+
+    const safeX = 320;
+    const altarY = 440;
+    const cardW = 340;
+    const cardH = 380;
+
+    // Left Altar: Safe Sanctuary
+    const safeBg = this.add.rectangle(safeX, altarY, cardW, cardH, 0x1c2720, 0.98)
+      .setStrokeStyle(2, 0x76b886);
+    const safeSeal = this.add.circle(safeX, altarY - 125, 34, 0x76b886, 0.25)
+      .setStrokeStyle(1.5, 0x76b886);
+    const safeSealText = this.add.text(safeX, altarY - 125, '阁', {
+      fontFamily: 'serif', fontSize: '28px', color: '#bce4c6',
+    }).setOrigin(0.5);
+    const safeTitle = this.add.text(safeX, altarY - 65, '静 谧 宝 阁', {
+      fontFamily: 'serif', fontSize: '26px', color: '#eef8f0',
+    }).setOrigin(0.5);
+    const safeSub = this.add.text(safeX, altarY - 30, '稳健之选 · 免战直取', {
+      fontSize: '14px', color: '#88cca0',
+    }).setOrigin(0.5);
+    const safeDesc = this.add.text(safeX, altarY + 35, '古圣遗泽，祥和宁静。\n直接获取高阶稀有笔画与进阶词组武器。\n\n奖励：稀有笔画 ×7\n进阶武器：【炎刀】', {
+      fontSize: '14px', color: '#c5d5c7', align: 'center', lineSpacing: 6,
+    }).setOrigin(0.5);
+
+    const safeBtn = this.add.text(safeX, altarY + 135, '🎁 供 奉 取 宝 (安全下一区域)', {
+      fontFamily: 'serif', fontSize: '16px', color: '#17271c',
+      backgroundColor: '#7ec68e', padding: { x: 18, y: 10 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    safeBtn.on('pointerdown', () => {
+      const run = gameState.expedition;
+      if (!run) return;
+      claimSafeSanctuaryReward(run, gameState.meta);
+      safeBtn.setText('✓ 宝物已收入行囊！');
+      safeBtn.disableInteractive();
+      this.refreshInventoryUI();
+      this.time.delayedCall(1200, () => {
+        this.scene.start('Route');
+      });
+    });
+
+    this.sanctuaryContainer.add([safeBg, safeSeal, safeSealText, safeTitle, safeSub, safeDesc, safeBtn]);
+
+    // Right Altar: Trial of Deadly Combat
+    const trialX = 704;
+    const trialBg = this.add.rectangle(trialX, altarY, cardW, cardH, 0x271e1e, 0.98)
+      .setStrokeStyle(2, 0xd4af37);
+    const trialSeal = this.add.circle(trialX, altarY - 125, 34, 0xd4af37, 0.25)
+      .setStrokeStyle(1.5, 0xd4af37);
+    const trialSealText = this.add.text(trialX, altarY - 125, '斗', {
+      fontFamily: 'serif', fontSize: '28px', color: '#f6ebd2',
+    }).setOrigin(0.5);
+    const trialTitle = this.add.text(trialX, altarY - 65, '死 斗 试 炼', {
+      fontFamily: 'serif', fontSize: '26px', color: '#fbf4e2',
+    }).setOrigin(0.5);
+    const trialSub = this.add.text(trialX, altarY - 30, '搏命之选 · 翻倍至宝', {
+      fontSize: '14px', color: '#e2c56a',
+    }).setOrigin(0.5);
+    const trialDesc = this.add.text(trialX, altarY + 35, '字阵守护兽镇守核心，迎战试炼强敌！\n战胜赢取翻倍顶级大奖！\n\n战胜奖励：顶级笔画 ×14\n绝品武器：【风火刃】\n★ 保命禁制：战败保留 1 血逃离', {
+      fontSize: '14px', color: '#dcd1bb', align: 'center', lineSpacing: 6,
+    }).setOrigin(0.5);
+
+    const trialBtn = this.add.text(trialX, altarY + 135, '⚔️ 开 启 试 炼 (迎战守护兽)', {
+      fontFamily: 'serif', fontSize: '16px', color: '#1f1a14',
+      backgroundColor: '#e5c872', padding: { x: 18, y: 10 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    trialBtn.on('pointerdown', () => {
+      gameState.selectRoute('secret_riddle');
+      this.scene.start('Game');
+    });
+
+    this.sanctuaryContainer.add([trialBg, trialSeal, trialSealText, trialTitle, trialSub, trialDesc, trialBtn]);
   }
 }
