@@ -83,7 +83,11 @@ export class RouteScene extends Phaser.Scene {
       target.setInteractive({ useHandCursor: true });
       target.on('pointerdown', () => {
         gameState.selectRoute(routeId);
-        this.scene.start('Game');
+        if (routeId === 'secret_riddle') {
+          this.scene.start('SecretRiddle');
+        } else {
+          this.scene.start('Game');
+        }
       });
     }
   }

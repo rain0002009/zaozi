@@ -4,6 +4,7 @@ import { MenuScene } from './scenes/MenuScene';
 import { BaseScene } from './scenes/BaseScene';
 import { RouteScene } from './scenes/RouteScene';
 import { GameScene } from './scenes/GameScene';
+import { SecretRiddleScene } from './scenes/SecretRiddleScene';
 
 // Ensure all Phaser Text objects use modern Chinese typography and high-DPI resolution
 const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
@@ -46,7 +47,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: { gravity: { x: 0, y: 0 }, debug: false }
   },
-  scene: [BootScene, MenuScene, BaseScene, RouteScene, GameScene]
+  scene: [BootScene, MenuScene, BaseScene, RouteScene, GameScene, SecretRiddleScene]
 };
 
 const game = new Phaser.Game(config);
