@@ -651,6 +651,18 @@ export class BaseScene extends Phaser.Scene {
       fontSize: '13px', color: '#97a393',
     }));
 
+    // 天工配置台入口按钮
+    const configBtn = this.add.text(780, 160, '⚙️ 天工配置台 (配置武器/特性)', {
+      fontSize: '13px',
+      color: '#d0b466',
+      backgroundColor: '#263428',
+      padding: { x: 12, y: 6 },
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    configBtn.on('pointerdown', () => {
+      window.open(window.location.pathname + '?view=weapon-editor', '_blank');
+    });
+    parent.add(configBtn);
+
     // Forge Slots Drop Zone
     const forgeBoxX = 48;
     const forgeBoxY = 230;

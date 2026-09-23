@@ -50,5 +50,12 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, BaseScene, RouteScene, GameScene, SecretRiddleScene]
 };
 
-const game = new Phaser.Game(config);
-(window as any).game = game;
+import { mountWeaponEditor } from './editor/WeaponEditor';
+
+const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+if (urlParams && urlParams.get('view') === 'weapon-editor') {
+  mountWeaponEditor(document.body);
+} else {
+  const game = new Phaser.Game(config);
+  (window as any).game = game;
+}
