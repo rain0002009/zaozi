@@ -178,23 +178,4 @@ export class InkVFX {
       ease: 'Back.easeOut',
     });
   }
-
-  /**
-   * Requirement 8: Creates an inner/outer drop shadow beneath floating parchment panels.
-   */
-  static createDropShadow(
-    scene: Phaser.Scene,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    radius: number = 6,
-    alpha: number = 0.45,
-    offset: { x: number; y: number } = { x: 6, y: 8 }
-  ): Phaser.GameObjects.Rectangle {
-    // In Phaser, a dark rounded rectangle with offset simulates a soft elevation drop shadow
-    const shadow = scene.add.rectangle(x + offset.x, y + offset.y, w, h, 0x000000, alpha)
-      .setOrigin(0);
-    return shadow;
-  }
 }

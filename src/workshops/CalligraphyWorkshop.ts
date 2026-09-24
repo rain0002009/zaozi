@@ -19,10 +19,10 @@ export class CalligraphyWorkshop {
   private currentStroke: number[][] = [];
   private isDrawing = false;
   private inkGraphics!: Phaser.GameObjects.Graphics;
-  private canvasWidth = 288;
-  private canvasHeight = 288;
+  private canvasWidth = 296;
+  private canvasHeight = 296;
   private canvasX = 48;
-  private canvasY = 224;
+  private canvasY = 160;
 
   // Recognition state
   private candidates: Array<{ character: string; score: number; isKnown: boolean; wordId?: WordId }> = [];
@@ -53,36 +53,16 @@ export class CalligraphyWorkshop {
   private create(): void {
     const parent = this.container;
 
-    // Workshop Title & Subtitle (Requirement 2: LXGW WenKai typography)
-    parent.add(this.scene.add.text(48, 160, '毛笔宣纸造字台', {
-      fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
-      fontSize: '24px',
-      color: '#fdf5e6',
-      shadow: {
-        color: 'rgba(223, 196, 104, 0.35)',
-        blur: 8,
-        fill: true,
-      },
-    }));
-    parent.add(this.scene.add.text(48, 194, '在宣纸画板上运笔书写。以墨化符，比对仓中笔画即可【凝字成符】。', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: '13px',
-      color: '#9aa898',
-    }));
-
-    // 1. Rice Paper Canvas (Requirement 4: Authentic Rice Paper Texture + Red Mi-Grid + Vintage Vignette)
-    // Requirement 8: Floating drop shadow beneath rice paper board
-    InkVFX.createDropShadow(this.scene, this.canvasX, this.canvasY, this.canvasWidth, this.canvasHeight, 8, 0.48, { x: 7, y: 9 });
-
-    const boardBg = this.scene.add.image(this.canvasX, this.canvasY, 'tx_paper_board').setOrigin(0);
+    // 1. 摊开的宣纸卷轴画板 (Scroll Board) - 彻底移除外部生硬黑色阴影矩形
+    const boardBg = this.scene.add.image(this.canvasX, this.canvasY, 'tx_scroll_desk').setOrigin(0);
     parent.add(boardBg);
 
     // Graphics for user ink strokes
     this.inkGraphics = this.scene.add.graphics();
     parent.add(this.inkGraphics);
 
-    // Interactive drawing surface
-    const drawZone = this.scene.add.rectangle(this.canvasX, this.canvasY, this.canvasWidth, this.canvasHeight, 0x000000, 0)
+    // Interactive drawing surface - 位于画卷宣纸内芯区域 (左右装裱缩进 16px，上下缩进 8px)
+    const drawZone = this.scene.add.rectangle(this.canvasX + 16, this.canvasY + 8, this.canvasWidth - 32, this.canvasHeight - 16, 0x000000, 0.001)
       .setOrigin(0)
       .setInteractive({ useHandCursor: true });
     parent.add(drawZone);
@@ -118,11 +98,11 @@ export class CalligraphyWorkshop {
     drawZone.on('pointerup', finishStroke);
     drawZone.on('pointerout', finishStroke);
 
-    // Control buttons under canvas (Requirement 3: Calligraphic brush-stroke buttons)
-    const btnY = this.canvasY + this.canvasHeight + 16;
+    // Control buttons under canvas (毛笔飞白按键，彻底根除黑框)
+    const btnY = this.canvasY + this.canvasHeight + 14;
 
-    // Clear Button (Cinnabar brush button)
-    const clearContainer = this.scene.add.container(this.canvasX + 43, btnY + 17);
+    // 清空笔画 (朱砂毛笔按键)
+    const clearContainer = this.scene.add.container(this.canvasX + 54, btnY + 17);
     const clearImg = this.scene.add.image(0, 0, 'tx_brush_btn_red').setOrigin(0.5).setInteractive({ useHandCursor: true });
     const clearText = this.scene.add.text(0, 0, '清空笔画', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
@@ -140,8 +120,8 @@ export class CalligraphyWorkshop {
       this.clearHandwriting();
     });
 
-    // Undo Button (Dark ink brush button)
-    const undoContainer = this.scene.add.container(this.canvasX + 138, btnY + 17);
+    // 撤销末笔 (墨色毛笔按键)
+    const undoContainer = this.scene.add.container(this.canvasX + 154, btnY + 17);
     const undoImg = this.scene.add.image(0, 0, 'tx_brush_btn_small_dark').setOrigin(0.5).setInteractive({ useHandCursor: true });
     const undoText = this.scene.add.text(0, 0, '撤销末笔', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
@@ -167,47 +147,45 @@ export class CalligraphyWorkshop {
   }
 
   private drawRecognitionPanel(parent: Phaser.GameObjects.Container): void {
-    const startX = this.canvasX + this.canvasWidth + 28;
+    const startX = this.canvasX + this.canvasWidth + 24;
     const startY = this.canvasY;
 
-    parent.add(this.scene.add.text(startX, startY, '识别候选字 (点击选定):', {
+    // 极简游戏化标题：【 推演灵字 】
+    parent.add(this.scene.add.text(startX, startY, '【 推演灵字 】', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
-      fontSize: '14px',
+      fontSize: '16px',
       color: '#dfc068',
       fontStyle: 'bold',
     }));
 
-    this.candidateStatusText = this.scene.add.text(startX + 160, startY, '', {
+    this.candidateStatusText = this.scene.add.text(startX + 140, startY + 2, '', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '12px',
       color: '#c59f49',
     });
     parent.add(this.candidateStatusText);
 
-    // 6 Candidate Slots
+    // 6 Candidate Slots - 玉石印台造型 (彻底去除黑框)
     this.candidateButtons = [];
     for (let i = 0; i < 6; i++) {
       const col = i % 3;
       const row = Math.floor(i / 3);
       const bx = startX + col * 74;
-      const by = startY + 28 + row * 62;
-
-      // Drop shadow for candidate slot (Requirement 8)
-      InkVFX.createDropShadow(this.scene, bx, by, 64, 52, 4, 0.35, { x: 3, y: 4 });
+      const by = startY + 30 + row * 60;
 
       const slot = this.scene.add.container(bx, by);
-      const bg = this.scene.add.rectangle(0, 0, 64, 52, 0x1d2720, 0.95)
+      const bg = this.scene.add.image(0, 0, 'tx_seal_slot')
         .setOrigin(0)
-        .setStrokeStyle(1.5, 0x3d4b3f)
         .setInteractive({ useHandCursor: true });
 
-      const charText = this.scene.add.text(32, 22, '', {
+      const charText = this.scene.add.text(32, 26, '', {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
-        fontSize: '25px',
+        fontSize: '26px',
         color: '#fdf5e6',
+        fontStyle: 'bold',
       }).setOrigin(0.5);
 
-      const starText = this.scene.add.text(54, 10, '', {
+      const starText = this.scene.add.text(54, 12, '', {
         fontSize: '10px',
         color: '#dfc068',
       }).setOrigin(0.5);
@@ -226,17 +204,10 @@ export class CalligraphyWorkshop {
       });
     }
 
-    // Detail & Synthesis Card (Requirement 8: Floating drop shadow)
-    const cardY = startY + 168;
-    InkVFX.createDropShadow(this.scene, startX, cardY, 230, 150, 6, 0.45, { x: 6, y: 7 });
-
-    const cardBg = this.scene.add.rectangle(startX, cardY, 230, 150, 0x1c261e, 0.98)
-      .setOrigin(0)
-      .setStrokeStyle(1.5, 0x7f6832);
-    const innerBorder = this.scene.add.rectangle(startX + 3, cardY + 3, 224, 144, 0x000000, 0)
-      .setOrigin(0)
-      .setStrokeStyle(1, 0x3d4b3f);
-    parent.add([cardBg, innerBorder]);
+    // Detail & Synthesis Card (兵刃玄案/神案底图，彻底根除外凸黑框)
+    const cardY = startY + 160;
+    const cardBg = this.scene.add.image(startX, cardY, 'tx_preview_altar').setOrigin(0);
+    parent.add(cardBg);
 
     this.detailCharText = this.scene.add.text(startX + 14, cardY + 12, '【未落笔】', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
@@ -249,28 +220,28 @@ export class CalligraphyWorkshop {
       fontSize: '11px',
       color: '#dfc068',
     });
-    this.detailSummaryText = this.scene.add.text(startX + 14, cardY + 38, '在宣纸上运笔，系统将实时推演意蕴。', {
+    this.detailSummaryText = this.scene.add.text(startX + 14, cardY + 38, '在左侧画卷挥毫，推演天地灵字意蕴。', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '11px',
       color: '#9aa898',
-      wordWrap: { width: 202 },
+      wordWrap: { width: 210 },
       lineSpacing: 3,
     });
     this.detailRecipeText = this.scene.add.text(startX + 14, cardY + 74, '', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '11px',
       color: '#d6b885',
-      wordWrap: { width: 202 },
+      wordWrap: { width: 210 },
     });
-    this.detailStatusText = this.scene.add.text(startX + 14, cardY + 96, '', {
+    this.detailStatusText = this.scene.add.text(startX + 14, cardY + 94, '', {
       fontFamily: '"Noto Serif SC", serif',
       fontSize: '11px',
       color: '#86efac',
-      wordWrap: { width: 202 },
+      wordWrap: { width: 210 },
     });
 
-    // Synthesize button as calligraphic brush button (Requirement 3)
-    this.synthesizeButtonContainer = this.scene.add.container(startX + 115, cardY + 126);
+    // Synthesize button as calligraphic brush button
+    this.synthesizeButtonContainer = this.scene.add.container(startX + 120, cardY + 120);
     this.synthesizeBtnBg = this.scene.add.image(0, 0, 'tx_brush_btn_small_dark').setOrigin(0.5);
     this.synthesizeBtnText = this.scene.add.text(0, 0, '凝字成符', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
@@ -304,9 +275,9 @@ export class CalligraphyWorkshop {
   }
 
   private drawRecipeBook(parent: Phaser.GameObjects.Container, x: number, y: number): void {
-    parent.add(this.scene.add.text(x, y, '快捷凝字 (点击直接消耗笔画生成):', {
+    parent.add(this.scene.add.text(x, y, '【 熟识古字 】', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
-      fontSize: '13px',
+      fontSize: '14px',
       color: '#dfc068',
       fontStyle: 'bold',
     }));
@@ -384,7 +355,7 @@ export class CalligraphyWorkshop {
   private updateCandidateSelectionVisuals(): void {
     for (let i = 0; i < 6; i++) {
       const slot = this.candidateButtons[i];
-      const bg = slot.getAt(0) as Phaser.GameObjects.Rectangle;
+      const bg = slot.getAt(0) as Phaser.GameObjects.Image;
       const charText = slot.getAt(1) as Phaser.GameObjects.Text;
       const starText = slot.getAt(2) as Phaser.GameObjects.Text;
 
@@ -393,18 +364,11 @@ export class CalligraphyWorkshop {
         charText.setText(candidate.character);
         starText.setText(candidate.isKnown ? '★' : '');
         const isSelected = this.selectedCandidate && this.selectedCandidate.character === candidate.character;
-        if (isSelected) {
-          bg.setStrokeStyle(2, 0xd0b466);
-          bg.setFillStyle(0x2d3a30, 1);
-        } else {
-          bg.setStrokeStyle(1, 0x3d4b3f);
-          bg.setFillStyle(0x1a231d, 0.95);
-        }
+        bg.setTexture(isSelected ? 'tx_seal_slot_active' : 'tx_seal_slot');
       } else {
         charText.setText('');
         starText.setText('');
-        bg.setStrokeStyle(1, 0x2e3930);
-        bg.setFillStyle(0x161d18, 0.6);
+        bg.setTexture('tx_seal_slot');
       }
     }
   }
@@ -503,26 +467,26 @@ export class CalligraphyWorkshop {
       const wx = index * 60;
       const btnContainer = this.scene.add.container(wx, 0);
 
-      const bg = this.scene.add.rectangle(0, 0, 52, 38, 0x202b23, 0.95)
+      // Inlaid word tile
+      const bg = this.scene.add.image(0, 0, 'tx_word_token')
         .setOrigin(0)
-        .setStrokeStyle(1.5, 0x485c4b)
+        .setScale(52 / 78, 38 / 42)
         .setInteractive({ useHandCursor: true });
 
       const text = this.scene.add.text(26, 19, wordId, {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
         fontSize: '22px',
         color: '#fdf5e6',
+        fontStyle: 'bold',
       }).setOrigin(0.5);
 
       btnContainer.add([bg, text]);
 
       bg.on('pointerover', () => {
-        bg.setStrokeStyle(1.5, 0xd0b466);
-        bg.setFillStyle(0x2c3b30);
+        btnContainer.setScale(1.06);
       });
       bg.on('pointerout', () => {
-        bg.setStrokeStyle(1.5, 0x485c4b);
-        bg.setFillStyle(0x202b23);
+        btnContainer.setScale(1.0);
       });
 
       bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {

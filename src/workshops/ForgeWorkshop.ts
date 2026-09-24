@@ -34,30 +34,13 @@ export class ForgeWorkshop {
   private create(): void {
     const parent = this.container;
 
-    // Header title (Requirement 2: LXGW WenKai typography)
-    parent.add(this.scene.add.text(48, 160, '铸武台 (字词熔铸成武)', {
-      fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
-      fontSize: '24px',
-      color: '#fdf5e6',
-      shadow: {
-        color: 'rgba(223, 196, 104, 0.35)',
-        blur: 8,
-        fill: true,
-      },
-    }));
-    parent.add(this.scene.add.text(48, 194, '将仓中已生成的字拖拽或点击放入锻造台，熔铸词组武器。不限字数，字在锻造后消耗。', {
-      fontFamily: '"Noto Serif SC", serif',
-      fontSize: '13px',
-      color: '#9aa898',
-    }));
-
-    // Open Configurator Button
-    const configBtn = this.scene.add.text(780, 160, '⚙️ 天工配置台 (配置武器/特性)', {
+    // Open Configurator Button (天工配置台)
+    const configBtn = this.scene.add.text(760, 114, '⚙️ 天工配置台', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
       fontSize: '13px',
       color: '#dfc068',
-      backgroundColor: '#202b22',
-      padding: { x: 14, y: 7 },
+      backgroundColor: '#1b251e',
+      padding: { x: 14, y: 6 },
     }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     configBtn.setStroke('#635128', 1.5);
     configBtn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -66,25 +49,18 @@ export class ForgeWorkshop {
     });
     parent.add(configBtn);
 
-    // Forge Slots Drop Zone (Requirement 8: Floating drop shadow)
+    // 1. Forge Slots Drop Zone (玄铁熔炼古鼎实物面板，彻底移除外部黑框)
     const forgeBoxX = 48;
-    const forgeBoxY = 230;
+    const forgeBoxY = 160;
     const forgeBoxW = 470;
     const forgeBoxH = 140;
 
-    InkVFX.createDropShadow(this.scene, forgeBoxX, forgeBoxY, forgeBoxW, forgeBoxH, 8, 0.45, { x: 6, y: 8 });
+    const forgeBoxBg = this.scene.add.image(forgeBoxX, forgeBoxY, 'tx_furnace_panel').setOrigin(0);
+    parent.add(forgeBoxBg);
 
-    const forgeBoxBg = this.scene.add.rectangle(forgeBoxX, forgeBoxY, forgeBoxW, forgeBoxH, 0x1c251e, 0.98)
-      .setOrigin(0)
-      .setStrokeStyle(1.5, 0x78632f);
-    const forgeBoxInner = this.scene.add.rectangle(forgeBoxX + 3, forgeBoxY + 3, forgeBoxW - 6, forgeBoxH - 6, 0x000000, 0)
-      .setOrigin(0)
-      .setStrokeStyle(1, 0x3d4b3f);
-    parent.add([forgeBoxBg, forgeBoxInner]);
-
-    parent.add(this.scene.add.text(forgeBoxX + 16, forgeBoxY + 12, '锻造槽位 (拖拽或点击下方字放入，点击槽内字可移出):', {
+    parent.add(this.scene.add.text(forgeBoxX + 16, forgeBoxY + 12, '【 熔炉槽位 】', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
-      fontSize: '13px',
+      fontSize: '15px',
       color: '#dfc068',
       fontStyle: 'bold',
     }));
@@ -109,33 +85,31 @@ export class ForgeWorkshop {
     this.forgeSlotsContainer = this.scene.add.container(forgeBoxX, forgeBoxY);
     parent.add(this.forgeSlotsContainer);
 
-    // Forge Preview Card
-    const previewX = forgeBoxX + forgeBoxW + 20;
-    InkVFX.createDropShadow(this.scene, previewX, forgeBoxY, 240, 140, 6, 0.45, { x: 6, y: 7 });
-
+    // 2. Forge Preview Card (兵刃玄案/神案底图，彻底移除外部黑框)
+    const previewX = forgeBoxX + forgeBoxW + 16;
     this.forgePreviewCard = this.scene.add.container(previewX, forgeBoxY);
     parent.add(this.forgePreviewCard);
 
-    // Word Inventory Section
-    parent.add(this.scene.add.text(48, 395, '仓中已生成字 (拖拽或点击放入锻造槽):', {
+    // 3. Word Inventory Section (仓中字阵)
+    parent.add(this.scene.add.text(48, 320, '【 仓中字阵 】', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
-      fontSize: '14px',
+      fontSize: '15px',
       color: '#dfc068',
       fontStyle: 'bold',
     }));
 
-    this.forgeWordSelector = this.scene.add.container(48, 425);
+    this.forgeWordSelector = this.scene.add.container(48, 350);
     parent.add(this.forgeWordSelector);
 
-    // Unlocked Weapons Shelf below
-    parent.add(this.scene.add.text(48, 510, '已铸造词组武器库 (点击直接装备出征):', {
+    // 4. Unlocked Weapons Shelf below (已铸兵刃)
+    parent.add(this.scene.add.text(48, 485, '【 已铸兵刃 】', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
-      fontSize: '14px',
+      fontSize: '15px',
       color: '#dfc068',
       fontStyle: 'bold',
     }));
 
-    this.forgeWeaponShelf = this.scene.add.container(48, 540);
+    this.forgeWeaponShelf = this.scene.add.container(48, 515);
     parent.add(this.forgeWeaponShelf);
 
     this.refresh();
@@ -158,10 +132,10 @@ export class ForgeWorkshop {
     this.forgeSlotsContainer.removeAll(true);
 
     if (this.currentForgeWords.length === 0) {
-      const emptyHint = this.scene.add.text(235, 75, '【虚位以待】从下方拖拽或点击字放入熔炉', {
-        fontFamily: '"Noto Serif SC", serif',
-        fontSize: '13px',
-        color: '#687769',
+      const emptyHint = this.scene.add.text(235, 75, '「待纳二字，合铸神兵」', {
+        fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
+        fontSize: '14px',
+        color: '#7b8f7e',
         fontStyle: 'italic',
       }).setOrigin(0.5);
       this.forgeSlotsContainer.add(emptyHint);
@@ -172,19 +146,17 @@ export class ForgeWorkshop {
       const sx = 20 + index * 76;
       const sy = 38;
 
-      // Drop shadow for slot
-      InkVFX.createDropShadow(this.scene, sx + 48, sy + 230, 64, 76, 4, 0.35, { x: 3, y: 4 });
-
       const slot = this.scene.add.container(sx, sy);
-      const bg = this.scene.add.rectangle(0, 0, 64, 76, 0x1d2720, 0.96)
+      const bg = this.scene.add.image(0, 0, 'tx_seal_slot_active')
         .setOrigin(0)
-        .setStrokeStyle(1.5, 0xd0b466)
+        .setScale(64 / 64, 76 / 52)
         .setInteractive({ useHandCursor: true });
 
-      const charText = this.scene.add.text(32, 34, wordId, {
+      const charText = this.scene.add.text(32, 38, wordId, {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
         fontSize: '32px',
         color: '#fdf5e6',
+        fontStyle: 'bold',
       }).setOrigin(0.5);
 
       const closeText = this.scene.add.text(56, 8, '✕', {
@@ -223,7 +195,7 @@ export class ForgeWorkshop {
     );
 
     if (wordsInInventory.length === 0) {
-      const emptyText = this.scene.add.text(0, 8, '（仓中暂无已生成的字，请先前往上方「毛笔宣纸造字台」运笔造字）', {
+      const emptyText = this.scene.add.text(0, 8, '（仓中暂无可用汉字，请先于「挥毫造字」运笔凝字）', {
         fontFamily: '"Noto Serif SC", serif',
         fontSize: '13px',
         color: '#6d7b6f',
@@ -241,20 +213,17 @@ export class ForgeWorkshop {
       const x = (index % 8) * 88;
       const y = Math.floor(index / 8) * 50;
 
-      // Drop shadow for word card
-      InkVFX.createDropShadow(this.scene, x + 48, y + 425, 78, 42, 4, 0.35, { x: 2, y: 3 });
-
       const card = this.scene.add.container(x, y);
       const isAvailable = available > 0;
 
-      const bg = this.scene.add.rectangle(0, 0, 78, 42, isAvailable ? 0x222e25 : 0x181f1a, 0.96)
-        .setOrigin(0)
-        .setStrokeStyle(1.5, isAvailable ? 0x4f6452 : 0x333d35);
+      const bg = this.scene.add.image(0, 0, isAvailable ? 'tx_word_token' : 'tx_word_token_dim')
+        .setOrigin(0);
 
       const label = this.scene.add.text(39, 21, `${wordId} ×${available}`, {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
         fontSize: '16px',
         color: isAvailable ? '#fdf5e6' : '#576258',
+        fontStyle: 'bold',
       }).setOrigin(0.5);
 
       card.add([bg, label]);
@@ -270,7 +239,7 @@ export class ForgeWorkshop {
 
         bg.on('dragstart', () => {
           dragStarted = true;
-          bg.setStrokeStyle(2, 0xd0b466);
+          card.setScale(1.08);
           card.setDepth(100);
         });
 
@@ -281,9 +250,10 @@ export class ForgeWorkshop {
 
         bg.on('dragend', (pointer: Phaser.Input.Pointer) => {
           card.setDepth(0);
+          card.setScale(1.0);
           card.setPosition(x, y);
 
-          const inForgeBox = pointer.x >= 48 && pointer.x <= 518 && pointer.y >= 230 && pointer.y <= 370;
+          const inForgeBox = pointer.x >= 48 && pointer.x <= 518 && pointer.y >= 160 && pointer.y <= 300;
           if (inForgeBox) {
             InkVFX.spawnInkSpatter(this.scene, pointer.x, pointer.y, { color: 'gold', count: 6 });
             this.currentForgeWords.push(wordId);
@@ -310,20 +280,16 @@ export class ForgeWorkshop {
     if (!this.forgePreviewCard) return;
     this.forgePreviewCard.removeAll(true);
 
-    const cardBg = this.scene.add.rectangle(0, 0, 240, 140, 0x1c251e, 0.98)
-      .setOrigin(0)
-      .setStrokeStyle(1.5, 0x78632f);
-    const cardInner = this.scene.add.rectangle(3, 3, 234, 134, 0x000000, 0)
-      .setOrigin(0)
-      .setStrokeStyle(1, 0x3d4b3f);
-    this.forgePreviewCard.add([cardBg, cardInner]);
+    // 兵刃玄案底图
+    const cardBg = this.scene.add.image(0, 0, 'tx_preview_altar').setOrigin(0);
+    this.forgePreviewCard.add(cardBg);
 
     if (this.currentForgeWords.length === 0) {
       this.forgePreviewCard.add(
-        this.scene.add.text(120, 70, '未放入汉字\n请将下方字拖入或点击放入', {
+        this.scene.add.text(120, 70, '「虚位以待，熔字见真章」\n将下方字牌拖入或点入炉膛', {
           fontFamily: '"Noto Serif SC", serif',
-          fontSize: '13px',
-          color: '#728070',
+          fontSize: '12px',
+          color: '#7b8f7e',
           align: 'center',
           lineSpacing: 6,
         }).setOrigin(0.5)
@@ -357,7 +323,7 @@ export class ForgeWorkshop {
 
       const isEquipped = gameState.meta.equippedWeapon === check.weaponId;
 
-      // Forge button as calligraphic brush button (Requirement 3)
+      // Forge button as calligraphic brush button
       const btnContainer = this.scene.add.container(120, 114);
       const btnBg = this.scene.add.image(0, 0, isEquipped ? 'tx_brush_btn_small_dark' : 'tx_brush_btn_small_gold')
         .setOrigin(0.5)
@@ -412,22 +378,21 @@ export class ForgeWorkshop {
       const x = index * 160;
       const isEquipped = gameState.meta.equippedWeapon === wId;
 
-      // Drop shadow for weapon card
-      InkVFX.createDropShadow(this.scene, x + 48, 540, 150, 78, 4, 0.35, { x: 3, y: 4 });
-
       const card = this.scene.add.container(x, 0);
-      card.add(this.scene.add.rectangle(0, 0, 150, 78, isEquipped ? 0x27362a : 0x1d2720, 0.96)
+      const bg = this.scene.add.image(0, 0, isEquipped ? 'tx_weapon_card_equipped' : 'tx_weapon_card')
         .setOrigin(0)
-        .setStrokeStyle(1.5, isEquipped ? 0xd0b466 : 0x48584a)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-          InkVFX.spawnInkSpatter(this.scene, pointer.x, pointer.y, { color: 'gold', count: 8 });
-          gameState.equipWeapon(wId);
-          this.callbacks.showNotice(`已切换出征武器：【${weapon.name}】`);
-          this.refreshWeaponShelf();
-          this.updateForgePreview();
-          this.callbacks.onWeaponEquipped(wId);
-        }));
+        .setInteractive({ useHandCursor: true });
+
+      bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        InkVFX.spawnInkSpatter(this.scene, pointer.x, pointer.y, { color: 'gold', count: 8 });
+        gameState.equipWeapon(wId);
+        this.callbacks.showNotice(`已切换出征武器：【${weapon.name}】`);
+        this.refreshWeaponShelf();
+        this.updateForgePreview();
+        this.callbacks.onWeaponEquipped(wId);
+      });
+
+      card.add(bg);
 
       card.add(this.scene.add.text(12, 10, weapon.name, {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',

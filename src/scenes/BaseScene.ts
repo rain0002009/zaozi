@@ -33,6 +33,9 @@ export class BaseScene extends Phaser.Scene {
   private strokeButtons: Record<Stroke, Phaser.GameObjects.Container> = {} as any;
   private strokeImages: Record<Stroke, Phaser.GameObjects.Image> = {} as any;
 
+  // Placards navigation
+  private tabPlacards: Record<'craft' | 'forge', { bg: Phaser.GameObjects.Image; text: Phaser.GameObjects.Text; container: Phaser.GameObjects.Container }> = {} as any;
+
   // Atmosphere
   private atmosphere!: InkAtmosphereManager;
 
@@ -41,41 +44,41 @@ export class BaseScene extends Phaser.Scene {
   }
 
   create(data: BaseSceneData): void {
-    this.cameras.main.setBackgroundColor('#0c130e');
+    this.cameras.main.setBackgroundColor('#0b100c');
 
     // 1. Generate all procedural textures
     InkTextureGenerator.generateAll(this);
 
-    // 2. Ink & Mountain textured background (Requirement 1)
+    // 2. Scholar's ancient desk & camp chamber background (Requirement 1 & Scene Metaphor)
     this.drawInkBackground();
 
-    // 3. Full-screen floating particles atmosphere (Requirement 7)
-    this.atmosphere = new InkAtmosphereManager(this, 40, 15);
+    // 3. Full-screen floating particles atmosphere
+    this.atmosphere = new InkAtmosphereManager(this, 36, 15);
     this.events.once('shutdown', () => {
       if (this.atmosphere) this.atmosphere.destroy();
     });
 
-    // Top Header (Requirement 2: WenKai serif typography)
-    this.add.text(48, 26, '归 字 营', {
+    // Top Header (古风书法题匾)
+    this.add.text(48, 24, '归 字 营', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
-      fontSize: '38px',
-      color: '#f5ead2',
+      fontSize: '36px',
+      color: '#fdf5e6',
       shadow: {
-        color: 'rgba(223, 196, 104, 0.35)',
+        color: 'rgba(223, 196, 104, 0.45)',
         blur: 10,
         fill: true,
       },
     });
-    this.add.text(194, 38, '人族最后的造字与铸武之所', {
+    this.add.text(190, 36, '人族最后的造字与铸武之所', {
       fontFamily: '"Noto Serif SC", serif',
-      fontSize: '14px',
-      color: '#9aa898',
+      fontSize: '13px',
+      color: '#8f9f8d',
     });
 
-    // Top Tab Switcher
+    // Top Tab Switcher as Hanging Placards (令签挂牌)
     this.drawTabSwitcher();
 
-    // Inventory Bar (always visible at top)
+    // Inventory Bar (Unrolled silk scroll banner)
     this.drawInventoryBar();
 
     // Container for Handwriting Calligraphy Board
@@ -119,34 +122,50 @@ export class BaseScene extends Phaser.Scene {
   }
 
   private drawInkBackground(): void {
-    // Requirement 1: Textured ink wash background with mountain silhouettes and vignette
-    this.add.image(0, 0, 'tx_ink_bg').setOrigin(0);
+    // 古风文房木案与营台背景 (无粗糙生硬色块)
+    this.add.image(0, 0, 'tx_scene_desk_bg').setOrigin(0);
   }
 
   private drawTabSwitcher(): void {
     const tabs = [
-      { id: 'craft' as const, label: '✍️ 毛笔宣纸造字台' },
-      { id: 'forge' as const, label: '⚔️ 铸武台 (字词熔铸成武)' },
+      { id: 'craft' as const, label: '✍️ 挥毫造字' },
+      { id: 'forge' as const, label: '⚔️ 熔字铸武' },
     ];
 
     tabs.forEach((tab, index) => {
-      const x = 510 + index * 170;
+      const x = 580 + index * 170;
+      const y = 38;
       const isCurrent = this.currentTab === tab.id;
-      const btn = this.add.text(x, 34, tab.label, {
+
+      const container = this.add.container(x, y);
+
+      const bgKey = isCurrent
+        ? (tab.id === 'craft' ? 'tx_token_sign_craft_active' : 'tx_token_sign_forge_active')
+        : (tab.id === 'craft' ? 'tx_token_sign_craft' : 'tx_token_sign_forge');
+
+      const bg = this.add.image(0, 0, bgKey).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+      const text = this.add.text(0, 0, tab.label, {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
-        fontSize: '14px',
-        color: isCurrent ? '#fdf5e6' : '#8fa08e',
-        backgroundColor: isCurrent ? '#2a3b2e' : '#18241b',
-        padding: { x: 14, y: 8 },
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        fontSize: '15px',
+        color: isCurrent ? '#fff3c7' : '#9bb09a',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
 
-      btn.setStroke(isCurrent ? '#dfc068' : '#394c3c', 1.5);
+      container.add([bg, text]);
 
-      btn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        InkVFX.spawnInkSpatter(this, pointer.x, pointer.y, { color: 'gold', count: 6 });
+      bg.on('pointerover', () => {
+        if (this.currentTab !== tab.id) container.setScale(1.04);
+      });
+      bg.on('pointerout', () => {
+        container.setScale(1.0);
+      });
+      bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        InkVFX.spawnInkSpatter(this, pointer.x, pointer.y, { color: 'gold', count: 8 });
         this.switchTab(tab.id);
       });
-      (this as any)[`tabBtn_${tab.id}`] = btn;
+
+      this.tabPlacards[tab.id] = { bg, text, container };
     });
   }
 
@@ -161,34 +180,31 @@ export class BaseScene extends Phaser.Scene {
       InkVFX.applyOvershootEntrance(this, activeContainer);
     }
 
-    const btnCraft = (this as any).tabBtn_craft as Phaser.GameObjects.Text | undefined;
-    const btnForge = (this as any).tabBtn_forge as Phaser.GameObjects.Text | undefined;
+    const craftPlacard = this.tabPlacards['craft'];
+    const forgePlacard = this.tabPlacards['forge'];
 
-    if (btnCraft) {
-      btnCraft.setColor(tab === 'craft' ? '#fdf5e6' : '#8fa08e');
-      btnCraft.setBackgroundColor(tab === 'craft' ? '#2a3b2e' : '#18241b');
-      btnCraft.setStroke(tab === 'craft' ? '#dfc068' : '#394c3c', 1.5);
+    if (craftPlacard) {
+      const isAct = tab === 'craft';
+      craftPlacard.bg.setTexture(isAct ? 'tx_token_sign_craft_active' : 'tx_token_sign_craft');
+      craftPlacard.text.setColor(isAct ? '#fff3c7' : '#9bb09a');
     }
-    if (btnForge) {
-      btnForge.setColor(tab === 'forge' ? '#fdf5e6' : '#8fa08e');
-      btnForge.setBackgroundColor(tab === 'forge' ? '#2a3b2e' : '#18241b');
-      btnForge.setStroke(tab === 'forge' ? '#dfc068' : '#394c3c', 1.5);
+    if (forgePlacard) {
+      const isAct = tab === 'forge';
+      forgePlacard.bg.setTexture(isAct ? 'tx_token_sign_forge_active' : 'tx_token_sign_forge');
+      forgePlacard.text.setColor(isAct ? '#fff3c7' : '#9bb09a');
     }
   }
 
-  // --- 1. 仓中笔画栏 (Inventory Bar) ---
+  // --- 1. 仓中笔画栏 (Inventory Scroll) ---
 
   private drawInventoryBar(): void {
-    // Outer drop shadow (Requirement 8)
-    InkVFX.createDropShadow(this, 48, 80, 928, 64, 8, 0.45);
-
     const bar = this.add.container(48, 80);
 
-    // Procedural textured bar background (Requirement 1)
-    bar.add(this.add.image(0, 0, 'tx_inventory_bar').setOrigin(0));
+    // 锦缎木轴画卷底图 (彻底根除外凸黑框)
+    bar.add(this.add.image(0, 0, 'tx_inventory_scroll').setOrigin(0));
 
-    // Label with calligraphy font and antique gold
-    bar.add(this.add.text(20, 22, '仓中笔画:', {
+    // 标签标题
+    bar.add(this.add.text(24, 22, '仓中笔画:', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
       fontSize: '15px',
       color: '#dfc068',
@@ -209,7 +225,7 @@ export class BaseScene extends Phaser.Scene {
         fontSize: '26px',
         color: isSelected ? '#fff2c8' : '#ede2ca',
         stroke: '#1b261d',
-        strokeThickness: 2,
+        strokeThickness: 1.5,
       });
 
       const countText = this.add.text(62, 25, `${gameState.meta.inventory[stroke]}`, {
@@ -249,11 +265,8 @@ export class BaseScene extends Phaser.Scene {
     const gateX = 818;
     const gateY = 160;
 
-    // Requirement 8: Floating drop shadow
-    InkVFX.createDropShadow(this, gateX, gateY, 158, 480, 8, 0.55, { x: 7, y: 9 });
-
     const gate = this.add.container(gateX, gateY);
-    // Requirement 6: Embossed golden relief frame
+    // 浮雕暗金门扉底图 (无生硬黑框)
     gate.add(this.add.image(0, 0, 'tx_gold_relief_gate').setOrigin(0));
 
     // Requirement 6: Gilded calligraphy character "关" with outer drop glow
@@ -369,9 +382,6 @@ export class BaseScene extends Phaser.Scene {
     const keptTotal = gameState.inventoryTotal(settlement.kept);
     const veil = this.add.rectangle(512, 384, 1024, 768, 0x0a100c, 0.78).setDepth(200);
 
-    // Drop shadow behind modal
-    const shadow = InkVFX.createDropShadow(this, 272, 249, 480, 270, 8, 0.6, { x: 8, y: 10 }).setDepth(201);
-
     const panel = this.add.container(512, 384).setDepth(202);
     panel.add(this.add.rectangle(0, 0, 480, 270, 0x1f2a22, 0.98).setStrokeStyle(2, 0xc49f49));
     panel.add(this.add.rectangle(0, 0, 468, 258, 0x000000, 0).setStrokeStyle(1, 0x485a4a));
@@ -407,7 +417,6 @@ export class BaseScene extends Phaser.Scene {
     closeBtnImg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       InkVFX.spawnInkSpatter(this, pointer.x, pointer.y, { color: 'gold', count: 10 });
       panel.destroy();
-      shadow.destroy();
       veil.destroy();
       this.refreshInventoryUI();
     });
