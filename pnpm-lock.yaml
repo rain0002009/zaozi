@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       phaser:
-        specifier: ^3.80.1
+        specifier: ^3.90.0
         version: 3.90.0
     devDependencies:
       '@types/pngjs':

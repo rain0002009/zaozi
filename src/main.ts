@@ -9,8 +9,8 @@ import { SecretRiddleScene } from './scenes/SecretRiddleScene';
 // Ensure all Phaser Text objects use modern Chinese typography and high-DPI resolution
 const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
 const textDPR = Math.max(Math.ceil(dpr), 2);
-const defaultFont = '"PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans SC", sans-serif';
-const defaultSerifFont = '"Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", serif';
+const defaultFont = '"Noto Serif SC", "Source Han Serif SC", "Songti SC", serif';
+const defaultSerifFont = '"LXGW WenKai", "霞鹜文楷", "STKaiti", "KaiTi", "楷体", serif';
 
 const originalSetStyle = (Phaser.GameObjects.TextStyle.prototype as any).setStyle;
 (Phaser.GameObjects.TextStyle.prototype as any).setStyle = function (style: any, updateText?: boolean, setDefaults?: boolean) {
@@ -19,7 +19,7 @@ const originalSetStyle = (Phaser.GameObjects.TextStyle.prototype as any).setStyl
   }
   if (!style.fontFamily) {
     style.fontFamily = defaultFont;
-  } else if (style.fontFamily === 'serif') {
+  } else if (style.fontFamily === 'serif' || style.fontFamily === 'calligraphy') {
     style.fontFamily = defaultSerifFont;
   }
   if (style.resolution === undefined || style.resolution < textDPR) {

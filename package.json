@@ -9,7 +9,6 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:character-rig": "node scripts/build_character_rig_assets.cjs",
     "test:routes": "node --experimental-strip-types --test scripts/route-generation.test.mjs",
     "test:riddle": "node --experimental-strip-types --test scripts/riddle-stele.test.mjs",
     "test:crafting": "node --experimental-strip-types --test scripts/riddle-crafting.test.mjs",
