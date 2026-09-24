@@ -9,6 +9,7 @@
     "esModuleInterop": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    "rootDir": "src",
     "outDir": "dist",
     "sourceMap": true
   },

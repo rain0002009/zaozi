@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build:character-rig": "node scripts/build_character_rig_assets.cjs",
     "test:routes": "node --experimental-strip-types --test scripts/route-generation.test.mjs",
     "test:riddle": "node --experimental-strip-types --test scripts/riddle-stele.test.mjs",
@@ -18,14 +20,14 @@
     "test:rig:browser": "node scripts/verify-character-rig.cjs"
   },
   "dependencies": {
-    "phaser": "^3.80.1"
+    "phaser": "^3.90.0"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
-    "@types/sharp": "^0.32.0",
     "pngjs": "^7.0.0",
     "sharp": "^0.35.4",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }

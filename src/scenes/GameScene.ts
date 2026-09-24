@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { KNIFE_COMBO } from '../combat/WeaponCombo';
+import { CombatEngine } from '../combat/CombatEngine';
 import { AttackEvent, PlayerCharacter } from '../entities/PlayerCharacter';
 import { gameState, ROUTES, RouteDefinition, Stroke, STROKES } from '../state/GameState';
 import { resolveTrialVictory, handleTrialFatalDamage } from '../state/RiddleState';
@@ -376,34 +377,74 @@ export class GameScene extends Phaser.Scene {
 
   private resolveMeleeHit(attack: AttackEvent): void {
     const weapon = gameState.getEquippedWeapon();
-    const attackSpec = KNIFE_COMBO.attacks[attack.comboStep - 1];
-    const attackAngle = attack.side === 'right' ? 0 : Math.PI;
-
-    const range = weapon.stats.range * (attackSpec.range / 105);
-    const damage = Math.round(weapon.stats.damage * (attack.comboStep === 3 ? 1.6 : attack.comboStep === 2 ? 1.2 : 1.0));
-    const knockback = weapon.stats.knockback * (attackSpec.knockback / 14);
-
-    const hits = this.enemies.filter((enemy) => {
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
-      const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.body.x, enemy.body.y);
-      return distance < range
-        && Math.abs(Phaser.Math.Angle.Wrap(angle - attackAngle)) < Phaser.Math.DegToRad(attackSpec.arcDegrees / 2);
+    const defenderMap = new Map<string, Enemy>();
+    const defenders = this.enemies.map((e, idx) => {
+      const id = (e as any).id || `enemy_${idx}`;
+      (e as any).id = id;
+      defenderMap.set(id, e);
+      return {
+        id,
+        x: e.body.x,
+        y: e.body.y,
+        hp: e.hp,
+        maxHp: e.maxHp,
+      };
     });
 
-    if (hits.length > 0) {
-      this.hitstopRemaining = 40;
-      this.cameras.main.shake(attack.comboStep === 3 ? 90 : 45, attack.comboStep === 3 ? 0.005 : 0.002);
+    const resolution = CombatEngine.resolveMeleeAttack(
+      {
+        x: this.player.x,
+        y: this.player.y,
+        comboStep: attack.comboStep,
+        side: attack.side,
+      },
+      weapon,
+      defenders
+    );
+
+    if (resolution.hitCount > 0) {
+      this.hitstopRemaining = resolution.hitstopRemainingMs;
+      if (resolution.cameraShake) {
+        this.cameras.main.shake(resolution.cameraShake.duration, resolution.cameraShake.intensity);
+      }
     }
 
-    hits.forEach((enemy) => {
-      this.damageEnemy(enemy, damage, attackAngle, knockback, attack.comboStep);
-      if (weapon.stats.element === 'fire') {
-        this.damageEnemy(enemy, Math.round(damage * 0.35), attackAngle, 4, attack.comboStep);
-        const burst = this.add.circle(enemy.body.x, enemy.body.y, 22, 0xe84a22, 0.5).setDepth(8);
+    resolution.hits.forEach((hit) => {
+      const enemy = defenderMap.get(hit.targetId);
+      if (!enemy) return;
+
+      this.damageEnemy(enemy, hit.damage, hit.attackAngle, hit.knockback, attack.comboStep);
+
+      if (hit.burnExtraDamage) {
+        this.damageEnemy(enemy, hit.burnExtraDamage, hit.attackAngle, 4, attack.comboStep);
+      }
+      if (hit.stunDurationMs) {
+        enemy.stateTimer += hit.stunDurationMs;
+        enemy.attackCooldown += hit.stunDurationMs;
+      }
+    });
+
+    if (resolution.totalLifeSteal > 0 && gameState.expedition) {
+      gameState.expedition.hp = Math.min(
+        gameState.expedition.maxHp,
+        gameState.expedition.hp + resolution.totalLifeSteal
+      );
+    }
+
+    resolution.visualEvents.forEach((ev) => {
+      if (ev.type === 'fireBurst') {
+        const burst = this.add.circle(ev.x, ev.y, 22, 0xe84a22, 0.5).setDepth(8);
         this.tweens.add({ targets: burst, alpha: 0, scale: 1.8, duration: 240, onComplete: () => burst.destroy() });
-      } else if (weapon.stats.element === 'earth') {
-        enemy.stateTimer += 700;
-        enemy.attackCooldown += 700;
+      } else if (ev.type === 'earthShockwave') {
+        const shock = this.add.circle(ev.x, ev.y, ev.radius || 30, 0xd0b466, 0.4).setDepth(8);
+        this.tweens.add({ targets: shock, alpha: 0, scale: 1.5, duration: 280, onComplete: () => shock.destroy() });
+      } else if (ev.type === 'instantKillExecute') {
+        const mark = this.add.text(ev.x, ev.y - 20, '【斩】', {
+          fontSize: '20px',
+          color: '#f87171',
+          fontStyle: 'bold',
+        }).setOrigin(0.5).setDepth(15);
+        this.tweens.add({ targets: mark, alpha: 0, y: ev.y - 45, duration: 400, onComplete: () => mark.destroy() });
       }
     });
   }

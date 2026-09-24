@@ -16,36 +16,25 @@ export type WordDefinition = {
   recipe: Partial<Inventory>;
 };
 
-export type CompoundWeaponId =
-  | '木刀'
-  | '炎刀'
-  | '金刀'
-  | '石刃'
-  | '木弓'
-  | '烈火弓'
-  | '磐石盾'
-  | '疾风刃'
-  | '奔雷刀'
-  | '破阵枪'
-  | '灵木枪'
-  | '开山斧'
-  | '素铁刀'
-  | '风火刃';
+import {
+  CompoundEquipment,
+  DEFAULT_EQUIPMENT_PRESETS,
+  ElementType,
+} from '../data/equipmentTypes';
+import { StorageAdapter, defaultStorageAdapter } from '../services/StorageAdapter';
 
-export type CompoundWeapon = {
-  id: CompoundWeaponId;
-  name: string;
-  words: WordId[];
-  type: 'melee' | 'ranged' | 'defense';
-  description: string;
-  summary: string;
+export type CompoundWeaponId = string;
+
+export type CompoundWeapon = CompoundEquipment & {
   stats: {
     damage: number;
     attackSpeed: number; // multiplier, e.g. 1.35
     range: number;
     knockback: number;
-    element: 'none' | 'wood' | 'fire' | 'metal' | 'earth' | 'water';
+    element: ElementType;
     projectileSpeed?: number;
+    damageReduction?: number;
+    bonusHp?: number;
   };
 };
 
@@ -191,220 +180,27 @@ export const WORDS: Record<WordId, WordDefinition> = {
   },
 };
 
-export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = {
-  木刀: {
-    id: '木刀',
-    name: '木刀',
-    words: ['木', '刀'],
-    type: 'melee',
-    description: '以灵木雕琢而成的防身木刀，轻灵质朴。',
-    summary: '基础挥斩，伤害 8，攻速 1.0。',
-    stats: {
-      damage: 8,
-      attackSpeed: 1.0,
-      range: 105,
-      knockback: 100,
-      element: 'wood',
-    },
-  },
-  素铁刀: {
-    id: '素铁刀',
-    name: '素铁刀',
-    words: ['刀'],
-    type: 'melee',
-    description: '未融合任何属性字的普通短刀，手感朴实。',
-    summary: '基础三连斩，左键挥击攻击侧敌人。',
-    stats: {
-      damage: 12,
-      attackSpeed: 1.0,
-      range: 110,
-      knockback: 120,
-      element: 'none',
-    },
-  },
-  炎刀: {
-    id: '炎刀',
-    name: '赤炎刀',
-    words: ['火', '刀'],
-    type: 'melee',
-    description: '刀身缠绕炽烈墨火，挥击割裂空气引发爆燃。',
-    summary: '挥出烈焰刀芒，命中敌群附带范围灼烧。',
-    stats: {
-      damage: 24,
-      attackSpeed: 1.05,
-      range: 125,
-      knockback: 135,
-      element: 'fire',
-    },
-  },
-  金刀: {
-    id: '金刀',
-    name: '金精刃',
-    words: ['金', '刀'],
-    type: 'melee',
-    description: '金精玄铁锻造，锋利无匹，刃芒森寒。',
-    summary: '范围 +30%，伤害提高，强力破甲击退。',
-    stats: {
-      damage: 28,
-      attackSpeed: 0.9,
-      range: 145,
-      knockback: 190,
-      element: 'metal',
-    },
-  },
-  石刃: {
-    id: '石刃',
-    name: '碎石刃',
-    words: ['石', '刀'],
-    type: 'melee',
-    description: '巨石磨制的厚重钝刀，挥动有崩山之势。',
-    summary: '势大力沉，命中引发地裂震波，概率眩晕。',
-    stats: {
-      damage: 32,
-      attackSpeed: 0.75,
-      range: 120,
-      knockback: 220,
-      element: 'earth',
-    },
-  },
-  木弓: {
-    id: '木弓',
-    name: '青木弓',
-    words: ['木', '弓'],
-    type: 'ranged',
-    description: '柔韧青木制成，连续发射穿透木箭。',
-    summary: '远程直线射击，连射速度快，穿透 1 名敌人。',
-    stats: {
-      damage: 16,
-      attackSpeed: 1.25,
-      range: 480,
-      knockback: 80,
-      element: 'wood',
-      projectileSpeed: 620,
-    },
-  },
-  烈火弓: {
-    id: '烈火弓',
-    name: '烈火弓',
-    words: ['火', '弓'],
-    type: 'ranged',
-    description: '弓弦附着妖火，射出的箭矢落地爆裂。',
-    summary: '发射爆裂火箭，命中爆炸引燃地面产生火海。',
-    stats: {
-      damage: 25,
-      attackSpeed: 0.9,
-      range: 460,
-      knockback: 140,
-      element: 'fire',
-      projectileSpeed: 550,
-    },
-  },
-  磐石盾: {
-    id: '磐石盾',
-    name: '磐石盾',
-    words: ['石', '盾'],
-    type: 'defense',
-    description: '玄石厚盾，坚不可摧，可抵御并反弹冲击。',
-    summary: '受创降低 45%，挥盾冲锋击飞前方所有敌群。',
-    stats: {
-      damage: 22,
-      attackSpeed: 0.85,
-      range: 90,
-      knockback: 250,
-      element: 'earth',
-    },
-  },
-  疾风刃: {
-    id: '疾风刃',
-    name: '疾风刃',
-    words: ['风', '刀'],
-    type: 'melee',
-    description: '御风而铸的轻灵刀刃，挥刀若狂风过境。',
-    summary: '攻速 +50%，挥斩附带青色风刃，撕裂前排。',
-    stats: {
-      damage: 20,
-      attackSpeed: 1.5,
-      range: 120,
-      knockback: 110,
-      element: 'wood',
-    },
-  },
-  奔雷刀: {
-    id: '奔雷刀',
-    name: '奔雷刀',
-    words: ['雷', '刀'],
-    type: 'melee',
-    description: '刀铭引雷符，劈砍带起霹雳爆鸣与金蛇电弧。',
-    summary: '命中引发电弧跳跃，对邻近敌人造成连环雷击。',
-    stats: {
-      damage: 26,
-      attackSpeed: 1.1,
-      range: 130,
-      knockback: 150,
-      element: 'fire',
-    },
-  },
-  破阵枪: {
-    id: '破阵枪',
-    name: '破阵枪',
-    words: ['枪'],
-    type: 'melee',
-    description: '丈八长枪，直线贯刺，破阵当先。',
-    summary: '超远距离直线突刺，攻击侧敌人受击硬直。',
-    stats: {
-      damage: 30,
-      attackSpeed: 0.95,
-      range: 180,
-      knockback: 200,
-      element: 'none',
-    },
-  },
-  灵木枪: {
-    id: '灵木枪',
-    name: '灵木长枪',
-    words: ['木', '枪'],
-    type: 'melee',
-    description: '灵木为杆，刚柔并济，连环疾刺破甲。',
-    summary: '攻速 +30%，枪出如龙，连续直刺贯穿敌阵。',
-    stats: {
-      damage: 26,
-      attackSpeed: 1.3,
-      range: 185,
-      knockback: 160,
-      element: 'wood',
-    },
-  },
-  开山斧: {
-    id: '开山斧',
-    name: '开山巨斧',
-    words: ['石', '斧'],
-    type: 'melee',
-    description: '厚重开山斧，重劈落地引发剧烈地震波。',
-    summary: '极高伤害与击退，下砸产生大范围冲击波。',
-    stats: {
-      damage: 42,
-      attackSpeed: 0.65,
-      range: 140,
-      knockback: 280,
-      element: 'earth',
-    },
-  },
-  风火刃: {
-    id: '风火刃',
-    name: '风火刃',
-    words: ['风', '火', '刀'],
-    type: 'melee',
-    description: '风助火势，烈风席卷炽热刀芒。',
-    summary: '攻速 +40%，挥斩附带烈焰与风刃双重爆发。',
-    stats: {
-      damage: 32,
-      attackSpeed: 1.4,
-      range: 135,
-      knockback: 150,
-      element: 'fire',
-    },
-  },
-};
+function buildCompoundWeapons(): Record<string, CompoundWeapon> {
+  const result: Record<string, CompoundWeapon> = {};
+  for (const preset of DEFAULT_EQUIPMENT_PRESETS) {
+    result[preset.id] = {
+      ...preset,
+      stats: {
+        damage: preset.baseStats.damage ?? 15,
+        attackSpeed: preset.baseStats.attackSpeed ?? 1.0,
+        range: preset.baseStats.range ?? 120,
+        knockback: preset.baseStats.knockback ?? 120,
+        element: preset.element,
+        projectileSpeed: preset.baseStats.projectileSpeed,
+        damageReduction: preset.baseStats.damageReduction,
+        bonusHp: preset.baseStats.bonusHp,
+      },
+    };
+  }
+  return result;
+}
+
+export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = buildCompoundWeapons();
 
 function emptyInventory(): Inventory {
   return { '一': 0, '丨': 0, '丿': 0, '㇏': 0, '丶': 0, '㇇': 0 };
@@ -429,11 +225,13 @@ function defaultMeta(): MetaState {
   };
 }
 
-class GameState {
+export class GameState {
   meta: MetaState = defaultMeta();
   expedition?: Expedition;
+  private storage: StorageAdapter;
 
-  constructor() {
+  constructor(storage: StorageAdapter = defaultStorageAdapter) {
+    this.storage = storage;
     this.load();
   }
 
@@ -718,7 +516,7 @@ class GameState {
 
   private load(): void {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = this.storage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<MetaState>;
       const unlockedWords = parsed.unlockedWords ?? [];
@@ -751,9 +549,9 @@ class GameState {
     }
   }
 
-  private save(): void {
+  save(): void {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.meta));
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(this.meta));
     } catch {
       // A blocked storage API should not prevent a run from continuing.
     }
