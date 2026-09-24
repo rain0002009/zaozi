@@ -53,9 +53,24 @@ const config: Phaser.Types.Core.GameConfig = {
 import { mountWeaponEditor } from './editor/WeaponEditor';
 
 const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-if (urlParams && urlParams.get('view') === 'weapon-editor') {
+const isEditorView = urlParams && (
+  urlParams.get('view') === 'weapon-editor' ||
+  urlParams.get('view') === 'editor' ||
+  urlParams.has('admin')
+);
+
+if (isEditorView) {
   mountWeaponEditor(document.body);
 } else {
   const game = new Phaser.Game(config);
   (window as any).game = game;
+
+  // Developer hotkey: F2 to open backend editor in new tab
+  if (typeof window !== 'undefined') {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'F2') {
+        window.open(window.location.pathname + '?view=weapon-editor', '_blank');
+      }
+    });
+  }
 }

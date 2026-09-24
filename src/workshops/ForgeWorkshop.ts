@@ -34,21 +34,6 @@ export class ForgeWorkshop {
   private create(): void {
     const parent = this.container;
 
-    // Open Configurator Button (天工配置台)
-    const configBtn = this.scene.add.text(760, 114, '⚙️ 天工配置台', {
-      fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
-      fontSize: '13px',
-      color: '#dfc068',
-      backgroundColor: '#1b251e',
-      padding: { x: 14, y: 6 },
-    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
-    configBtn.setStroke('#635128', 1.5);
-    configBtn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      InkVFX.spawnInkSpatter(this.scene, pointer.x, pointer.y, { color: 'gold', count: 6 });
-      window.open(window.location.pathname + '?view=weapon-editor', '_blank');
-    });
-    parent.add(configBtn);
-
     // 1. Forge Slots Drop Zone (玄铁熔炼古鼎实物面板，彻底移除外部黑框)
     const forgeBoxX = 48;
     const forgeBoxY = 160;
@@ -332,7 +317,7 @@ export class ForgeWorkshop {
       const btnText = this.scene.add.text(0, 0, isEquipped ? '✓ 已装备出征' : '锻造并装备', {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
         fontSize: '13px',
-        color: isEquipped ? '#5c6e5e' : '#251a0b',
+        color: isEquipped ? '#687c6b' : '#1a241b',
         fontStyle: 'bold',
       }).setOrigin(0.5);
 

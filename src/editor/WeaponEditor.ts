@@ -9,8 +9,7 @@ import {
   WeaponActionType,
   WeaponShape,
 } from '../data/equipmentTypes';
-
-const STORAGE_KEY = 'zaozi_weapon_editor_data';
+import { equipmentRepository } from '../data/EquipmentRepository';
 
 export class WeaponEditorApp {
   private container: HTMLElement;
@@ -26,30 +25,14 @@ export class WeaponEditorApp {
   }
 
   private loadInitialData(): void {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          this.equipmentList = parsed;
-          this.selectedId = this.equipmentList[0].id;
-          return;
-        }
-      }
-    } catch {
-      // fallback
-    }
-
-    // clone defaults
-    this.equipmentList = JSON.parse(JSON.stringify(DEFAULT_EQUIPMENT_PRESETS));
+    this.equipmentList = equipmentRepository.getAll();
     this.selectedId = this.equipmentList[0]?.id || '';
   }
 
-  private saveData(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.equipmentList, null, 2));
-    } catch {
-      // storage quota or disabled
+  private saveData(showToastFeedback = false): void {
+    equipmentRepository.saveAll(this.equipmentList);
+    if (showToastFeedback) {
+      this.showToast('💾 武器数据库已保存！游戏内数值与配方已实时同步生效。');
     }
   }
 
@@ -71,6 +54,7 @@ export class WeaponEditorApp {
             <span class="we-badge">防具: <b id="stat-armor">0</b></span>
           </div>
           <div class="we-header-actions">
+            <button class="we-btn we-btn-gold" id="btn-save-all" style="font-weight:bold; font-size:14px; padding: 7px 18px;">💾 保存生效</button>
             <button class="we-btn we-btn-secondary" id="btn-reset">🔄 恢复预设</button>
             <button class="we-btn we-btn-primary" id="btn-back-game">🎮 返回游戏</button>
           </div>
@@ -118,7 +102,7 @@ export class WeaponEditorApp {
               <pre><code id="json-code"></code></pre>
             </div>
             <div class="we-json-footer">
-              <span class="we-tip">💡 纯 JSON 代码生成，点击【复制】可直接粘贴至 GameState.ts 或外部数据源。</span>
+              <span class="we-tip">💡 武器数据库已与游戏本体打通，修改后点击【💾 保存生效】即可实时在归字营与战斗中应用；亦可通过【下载/导入】进行备份迁移。</span>
             </div>
           </aside>
         </div>
@@ -350,17 +334,21 @@ export class WeaponEditorApp {
     document.getElementById('btn-add-weapon')?.addEventListener('click', () => this.addNewEquipment('weapon'));
     document.getElementById('btn-add-armor')?.addEventListener('click', () => this.addNewEquipment('armor'));
 
+    // Save all to database
+    document.getElementById('btn-save-all')?.addEventListener('click', () => {
+      this.saveData(true);
+    });
+
     // Reset default presets
     document.getElementById('btn-reset')?.addEventListener('click', () => {
-      if (confirm('确定要恢复为游戏初始默认预设吗？当前未导出的修改将被覆盖。')) {
-        this.equipmentList = JSON.parse(JSON.stringify(DEFAULT_EQUIPMENT_PRESETS));
-        this.selectedId = this.equipmentList[0].id;
-        this.saveData();
+      if (confirm('确定要恢复为游戏初始默认预设吗？当前未导出的修改将被重置。')) {
+        this.equipmentList = equipmentRepository.resetToDefaults();
+        this.selectedId = this.equipmentList[0]?.id || '';
         this.updateLeftList();
         this.renderSelectedForm();
         this.updateJsonViewer();
         this.updateStats();
-        this.showToast('已重置恢复至初始默认预设！');
+        this.showToast('🔄 已重置恢复至初始默认预设！');
       }
     });
 
@@ -397,15 +385,15 @@ export class WeaponEditorApp {
 
     // Download JSON
     document.getElementById('btn-download-json')?.addEventListener('click', () => {
-      const jsonStr = JSON.stringify(this.equipmentList, null, 2);
+      const jsonStr = equipmentRepository.exportJson();
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'weapons-config.json';
+      a.download = 'zaozi-weapons-config.json';
       a.click();
       URL.revokeObjectURL(url);
-      this.showToast('✓ 已下载 weapons-config.json');
+      this.showToast('✓ 已下载 zaozi-weapons-config.json');
     });
 
     // Import JSON
@@ -421,18 +409,17 @@ export class WeaponEditorApp {
       reader.onload = (event) => {
         try {
           const content = event.target?.result as string;
-          const parsed = JSON.parse(content);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            this.equipmentList = parsed;
-            this.selectedId = this.equipmentList[0].id;
-            this.saveData();
+          const res = equipmentRepository.importJson(content);
+          if (res.success) {
+            this.equipmentList = equipmentRepository.getAll();
+            this.selectedId = this.equipmentList[0]?.id || '';
             this.updateLeftList();
             this.renderSelectedForm();
             this.updateJsonViewer();
             this.updateStats();
-            this.showToast(`✓ 成功导入 ${parsed.length} 件装备配置！`);
+            this.showToast(`✓ 成功导入 ${res.count} 件装备配置并实时生效！`);
           } else {
-            alert('导入失败：JSON 格式不是合法的装备列表数组。');
+            alert('导入失败：' + res.error);
           }
         } catch (err: any) {
           alert('解析 JSON 失败：' + err.message);

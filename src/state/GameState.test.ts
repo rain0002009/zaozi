@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GameState, COMPOUND_WEAPONS } from './GameState';
+import { equipmentRepository } from '../data/EquipmentRepository';
 import { MemoryStorageAdapter } from '../services/StorageAdapter';
 
 describe('GameState Domain Module with MemoryStorageAdapter Seam', () => {
@@ -65,5 +66,24 @@ describe('GameState Domain Module with MemoryStorageAdapter Seam', () => {
     expect(fireBlade).toBeDefined();
     expect(fireBlade.stats.element).toBe('fire');
     expect(fireBlade.traits.some((t) => t.traitId === 'burn')).toBe(true);
+  });
+
+  it('dynamically syncs custom weapon attributes from equipmentRepository', () => {
+    // Initially wood knife has damage 8
+    expect(state.getEquippedWeapon().stats.damage).toBe(8);
+
+    // Save customized weapon
+    const woodKnife = equipmentRepository.getById('木刀')!;
+    const originalDamage = woodKnife.baseStats.damage;
+    woodKnife.baseStats.damage = 88;
+    equipmentRepository.saveItem(woodKnife);
+
+    // GameState instantly updates
+    expect(state.getEquippedWeapon().stats.damage).toBe(88);
+
+    // Restore back
+    woodKnife.baseStats.damage = originalDamage;
+    equipmentRepository.saveItem(woodKnife);
+    expect(state.getEquippedWeapon().stats.damage).toBe(originalDamage);
   });
 });

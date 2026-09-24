@@ -21,6 +21,7 @@ import {
   DEFAULT_EQUIPMENT_PRESETS,
   ElementType,
 } from '../data/equipmentTypes';
+import { equipmentRepository } from '../data/EquipmentRepository';
 import { StorageAdapter, defaultStorageAdapter } from '../services/StorageAdapter';
 
 export type CompoundWeaponId = string;
@@ -180,9 +181,10 @@ export const WORDS: Record<WordId, WordDefinition> = {
   },
 };
 
-function buildCompoundWeapons(): Record<string, CompoundWeapon> {
+export function buildCompoundWeapons(presets?: CompoundEquipment[]): Record<string, CompoundWeapon> {
   const result: Record<string, CompoundWeapon> = {};
-  for (const preset of DEFAULT_EQUIPMENT_PRESETS) {
+  const list = presets || equipmentRepository.getAll();
+  for (const preset of list) {
     result[preset.id] = {
       ...preset,
       stats: {
@@ -201,6 +203,29 @@ function buildCompoundWeapons(): Record<string, CompoundWeapon> {
 }
 
 export const COMPOUND_WEAPONS: Record<CompoundWeaponId, CompoundWeapon> = buildCompoundWeapons();
+
+export function refreshCompoundWeapons(presets?: CompoundEquipment[]): void {
+  const updated = buildCompoundWeapons(presets);
+  for (const key of Object.keys(COMPOUND_WEAPONS)) {
+    delete COMPOUND_WEAPONS[key];
+  }
+  Object.assign(COMPOUND_WEAPONS, updated);
+}
+
+// Auto-sync when equipment repository emits updates
+equipmentRepository.subscribe((list) => {
+  refreshCompoundWeapons(list);
+});
+
+// Cross-tab sync if in browser
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'zaozi_weapon_editor_data') {
+      equipmentRepository.load();
+      refreshCompoundWeapons();
+    }
+  });
+}
 
 function emptyInventory(): Inventory {
   return { '一': 0, '丨': 0, '丿': 0, '㇏': 0, '丶': 0, '㇇': 0 };
