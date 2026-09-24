@@ -92,6 +92,9 @@ export class InkTextureGenerator {
     if (!tm.exists('tx_brush_btn_small_dark')) {
       this.generateBrushButton(scene, 'tx_brush_btn_small_dark', 96, 36, 'dark');
     }
+    if (!tm.exists('tx_brush_btn_large_gold')) {
+      this.generateBrushButton(scene, 'tx_brush_btn_large_gold', 180, 52, 'gold');
+    }
   }
 
   /**
@@ -809,7 +812,8 @@ export class InkTextureGenerator {
   }
 
   /**
-   * 12. 毛笔笔触造型按钮
+   * 12. 典雅暗金木匾 / 朱砂令牌造型按钮
+   * 规范微圆角矩形，搭配内凹质感渐变、双层鎏金包边与古铜铆钉角饰，彻底根除怪异扭曲与生硬纯色
    */
   private static generateBrushButton(
     scene: Phaser.Scene,
@@ -823,66 +827,105 @@ export class InkTextureGenerator {
     const ctx = canvas.getContext();
 
     ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(8, h / 2);
-    ctx.bezierCurveTo(4, 5, 14, 2, 26, 2);
-    ctx.lineTo(w - 26, 2);
-    ctx.bezierCurveTo(w - 14, 2, w - 3, 5, w - 6, h / 2);
-    ctx.bezierCurveTo(w - 3, h - 5, w - 14, h - 2, w - 26, h - 2);
-    ctx.lineTo(26, h - 2);
-    ctx.bezierCurveTo(14, h - 2, 4, h - 5, 8, h / 2);
-    ctx.closePath();
 
+    const drawRoundRect = (x: number, y: number, rw: number, rh: number, r: number) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + rw - r, y);
+      ctx.quadraticCurveTo(x + rw, y, x + rw, y + r);
+      ctx.lineTo(x + rw, y + rh - r);
+      ctx.quadraticCurveTo(x + rw, y + rh, x + rw - r, y + rh);
+      ctx.lineTo(x + r, y + rh);
+      ctx.quadraticCurveTo(x, y + rh, x, y + rh - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    };
+
+    const pad = 2;
+    const rw = w - pad * 2;
+    const rh = h - pad * 2;
+    const radius = 5;
+
+    // 1. 底衬阴影与外廓基底
+    drawRoundRect(pad, pad, rw, rh, radius);
     if (style === 'gold') {
-      const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, '#c79f45');
-      grad.addColorStop(0.3, '#dfc476');
-      grad.addColorStop(0.7, '#c9a147');
-      grad.addColorStop(1, '#a68132');
+      const grad = ctx.createLinearGradient(0, pad, 0, pad + rh);
+      grad.addColorStop(0, '#f2d88d');
+      grad.addColorStop(0.2, '#dfc16e');
+      grad.addColorStop(0.65, '#b9923e');
+      grad.addColorStop(1, '#866420');
       ctx.fillStyle = grad;
-      ctx.shadowColor = 'rgba(223, 196, 118, 0.5)';
-      ctx.shadowBlur = 6;
+      ctx.shadowColor = 'rgba(223, 196, 118, 0.4)';
+      ctx.shadowBlur = 5;
     } else if (style === 'red') {
-      const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, '#5a2020');
-      grad.addColorStop(0.5, '#7c2d2d');
-      grad.addColorStop(1, '#4a1717');
+      const grad = ctx.createLinearGradient(0, pad, 0, pad + rh);
+      grad.addColorStop(0, '#8e2b2b');
+      grad.addColorStop(0.3, '#741f1f');
+      grad.addColorStop(0.7, '#591616');
+      grad.addColorStop(1, '#3e0c0c');
       ctx.fillStyle = grad;
-      ctx.shadowColor = 'rgba(180, 50, 50, 0.4)';
+      ctx.shadowColor = 'rgba(160, 40, 40, 0.35)';
       ctx.shadowBlur = 5;
     } else {
-      const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, '#202c22');
-      grad.addColorStop(0.5, '#2b3b2f');
-      grad.addColorStop(1, '#19231b');
+      const grad = ctx.createLinearGradient(0, pad, 0, pad + rh);
+      grad.addColorStop(0, '#2b3b2e');
+      grad.addColorStop(0.3, '#212d23');
+      grad.addColorStop(0.7, '#18211a');
+      grad.addColorStop(1, '#0e1510');
       ctx.fillStyle = grad;
       ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
       ctx.shadowBlur = 5;
     }
     ctx.fill();
 
-    // 飞白水墨微丝
+    // 2. 内凹微光渐变高光层 (Inner Bevel)
     ctx.shadowBlur = 0;
+    ctx.save();
     ctx.lineWidth = 1;
-    for (let i = 0; i < 4; i++) {
-      const yOff = 7 + i * ((h - 14) / 3);
-      ctx.strokeStyle =
-        style === 'gold'
-          ? 'rgba(255, 245, 200, 0.35)'
-          : style === 'red'
-          ? 'rgba(255, 200, 200, 0.18)'
-          : 'rgba(200, 225, 200, 0.15)';
-      ctx.beginPath();
-      ctx.moveTo(14 + Math.random() * 8, yOff);
-      ctx.lineTo(w - 16 - Math.random() * 8, yOff);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = style === 'gold' ? '#fff0ba' : style === 'red' ? '#e57373' : '#687f6e';
-    ctx.lineWidth = 1;
+    drawRoundRect(pad + 1.5, pad + 1.5, rw - 3, rh - 3, radius - 1);
+    ctx.strokeStyle =
+      style === 'gold'
+        ? 'rgba(255, 250, 220, 0.65)'
+        : style === 'red'
+        ? 'rgba(255, 205, 205, 0.35)'
+        : 'rgba(200, 230, 205, 0.25)';
     ctx.stroke();
     ctx.restore();
 
+    // 3. 精致金属外边缘包边 (Outer Metallic Rim)
+    ctx.save();
+    ctx.lineWidth = 1.2;
+    drawRoundRect(pad, pad, rw, rh, radius);
+    ctx.strokeStyle =
+      style === 'gold'
+        ? '#fae8b0'
+        : style === 'red'
+        ? '#d66868'
+        : '#6f8b74';
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. 四角古铜暗金微铆钉饰扣 (Corner Rivet Accents)
+    const drawRivet = (cx: number, cy: number) => {
+      ctx.fillStyle = style === 'gold' ? '#684b16' : style === 'red' ? '#2e0a0a' : '#0a100b';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = style === 'gold' ? '#faecc4' : style === 'red' ? '#e89c9c' : '#88a38c';
+      ctx.beginPath();
+      ctx.arc(cx - 0.5, cy - 0.5, 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const rivetOffset = 6;
+    drawRivet(pad + rivetOffset, pad + rivetOffset);
+    drawRivet(pad + rw - rivetOffset, pad + rivetOffset);
+    drawRivet(pad + rivetOffset, pad + rh - rivetOffset);
+    drawRivet(pad + rw - rivetOffset, pad + rh - rivetOffset);
+
+    ctx.restore();
     canvas.refresh();
   }
 

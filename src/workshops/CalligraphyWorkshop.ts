@@ -246,7 +246,7 @@ export class CalligraphyWorkshop {
     this.synthesizeBtnText = this.scene.add.text(0, 0, '凝字成符', {
       fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", serif',
       fontSize: '13px',
-      color: '#5c6e5e',
+      color: '#687c6b',
       fontStyle: 'bold',
     }).setOrigin(0.5);
     this.synthesizeButtonContainer.add([this.synthesizeBtnBg, this.synthesizeBtnText]);
@@ -417,11 +417,11 @@ export class CalligraphyWorkshop {
   private setSynthesizeActive(active: boolean): void {
     if (active) {
       this.synthesizeBtnBg.setTexture('tx_brush_btn_small_gold');
-      this.synthesizeBtnText.setColor('#251a0b');
+      this.synthesizeBtnText.setColor('#1a241b');
       this.synthesizeBtnBg.setInteractive({ useHandCursor: true });
     } else {
       this.synthesizeBtnBg.setTexture('tx_brush_btn_small_dark');
-      this.synthesizeBtnText.setColor('#5c6e5e');
+      this.synthesizeBtnText.setColor('#687c6b');
       this.synthesizeBtnBg.disableInteractive();
     }
   }

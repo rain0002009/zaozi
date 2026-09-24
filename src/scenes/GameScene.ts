@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { InkTextureGenerator } from '../visuals/InkTextures';
+import { InkVFX } from '../visuals/InkAtmosphere';
 import { KNIFE_COMBO } from '../combat/WeaponCombo';
 import { CombatEngine } from '../combat/CombatEngine';
 import { AttackEvent, PlayerCharacter } from '../entities/PlayerCharacter';
@@ -606,12 +608,25 @@ export class GameScene extends Phaser.Scene {
     }, true));
   }
 
-  private makeActionButton(x: number, y: number, label: string, action: () => void, quiet = false): Phaser.GameObjects.Text {
-    const button = this.add.text(x, y, label, {
-      fontSize: '17px', color: quiet ? '#554c40' : '#f5ead2', backgroundColor: quiet ? '#cbc2ad' : '#664a34', padding: { x: 20, y: 11 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    button.on('pointerdown', action);
-    return button;
+  private makeActionButton(x: number, y: number, label: string, action: () => void, quiet = false): Phaser.GameObjects.Container {
+    InkTextureGenerator.generateAll(this);
+    const container = this.add.container(x, y);
+    const bgKey = quiet ? 'tx_brush_btn_small_dark' : 'tx_brush_btn_small_gold';
+    const bg = this.add.image(0, 0, bgKey).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const text = this.add.text(0, 0, label, {
+      fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
+      fontSize: '14px',
+      color: quiet ? '#dbe6d8' : '#1a241b',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    container.add([bg, text]);
+    bg.on('pointerover', () => container.setScale(1.05));
+    bg.on('pointerout', () => container.setScale(1.0));
+    bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      InkVFX.spawnInkSpatter(this, pointer.x, pointer.y, { color: 'gold', count: 8 });
+      action();
+    });
+    return container;
   }
 
   private updateEnemies(delta: number): void {

@@ -28,10 +28,7 @@ export class BaseScene extends Phaser.Scene {
   private forgeWorkshop!: ForgeWorkshop;
 
   // Inventory UI
-  private selectedStrokeForPlacement: Stroke = '一';
   private inventoryTexts: Record<Stroke, Phaser.GameObjects.Text> = {} as any;
-  private strokeButtons: Record<Stroke, Phaser.GameObjects.Container> = {} as any;
-  private strokeImages: Record<Stroke, Phaser.GameObjects.Image> = {} as any;
 
   // Placards navigation
   private tabPlacards: Record<'craft' | 'forge', { bg: Phaser.GameObjects.Image; text: Phaser.GameObjects.Text; container: Phaser.GameObjects.Container }> = {} as any;
@@ -215,15 +212,12 @@ export class BaseScene extends Phaser.Scene {
       const x = 118 + index * 98;
       const slot = this.add.container(x, 7);
 
-      const isSelected = stroke === this.selectedStrokeForPlacement;
-      const tokenImg = this.add.image(0, 0, isSelected ? 'tx_bamboo_token_active' : 'tx_bamboo_token')
-        .setOrigin(0)
-        .setInteractive({ useHandCursor: true });
+      const tokenImg = this.add.image(0, 0, 'tx_bamboo_token').setOrigin(0);
 
       const strokeText = this.add.text(24, 7, stroke, {
         fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
         fontSize: '26px',
-        color: isSelected ? '#fff2c8' : '#ede2ca',
+        color: '#ede2ca',
         stroke: '#1b261d',
         strokeThickness: 1.5,
       });
@@ -235,27 +229,9 @@ export class BaseScene extends Phaser.Scene {
       }).setOrigin(0.5);
 
       this.inventoryTexts[stroke] = countText;
-      this.strokeButtons[stroke] = slot;
-      this.strokeImages[stroke] = tokenImg;
 
       slot.add([tokenImg, strokeText, countText]);
-
-      tokenImg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        this.selectedStrokeForPlacement = stroke;
-        this.updateSelectedStrokeHighlight();
-        InkVFX.spawnInkSpatter(this, pointer.x, pointer.y, { color: 'gold', count: 7 });
-      });
-
       bar.add(slot);
-    });
-  }
-
-  private updateSelectedStrokeHighlight(): void {
-    STROKES.forEach((s) => {
-      const img = this.strokeImages[s];
-      if (img) {
-        img.setTexture(s === this.selectedStrokeForPlacement ? 'tx_bamboo_token_active' : 'tx_bamboo_token');
-      }
     });
   }
 

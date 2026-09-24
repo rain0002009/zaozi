@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { InkTextureGenerator } from '../visuals/InkTextures';
+import { InkVFX } from '../visuals/InkAtmosphere';
 
 export class MenuScene extends Phaser.Scene {
   constructor() { super('Menu'); }
@@ -23,13 +25,24 @@ export class MenuScene extends Phaser.Scene {
       fontSize: '22px', color: '#5b6057'
     }).setOrigin(0.5);
 
-    const startBtn = this.add.text(512, 452, '进入归字营', {
-      fontSize: '24px', color: '#f2ead8', backgroundColor: '#4c382b', padding: { x: 34, y: 14 }
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    InkTextureGenerator.generateAll(this);
 
-    startBtn.on('pointerover', () => startBtn.setBackgroundColor('#684d35'));
-    startBtn.on('pointerout', () => startBtn.setBackgroundColor('#4c382b'));
-    startBtn.on('pointerdown', () => this.scene.start('Base'));
+    const startBtnContainer = this.add.container(512, 452);
+    const startBtnImg = this.add.image(0, 0, 'tx_brush_btn_large_gold').setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const startBtnText = this.add.text(0, 0, '进入归字营', {
+      fontFamily: '"LXGW WenKai Screen", "LXGW WenKai", "Kaiti SC", KaiTi, serif',
+      fontSize: '22px',
+      color: '#1a241b',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    startBtnContainer.add([startBtnImg, startBtnText]);
+
+    startBtnImg.on('pointerover', () => startBtnContainer.setScale(1.05));
+    startBtnImg.on('pointerout', () => startBtnContainer.setScale(1.0));
+    startBtnImg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      InkVFX.spawnInkSpatter(this, pointer.x, pointer.y, { color: 'gold', count: 10 });
+      this.scene.start('Base');
+    });
 
     this.add.text(512, 674, 'WASD 移动 · 左键连击 · Q / 右键施放 · 空格闪避', {
       fontSize: '15px', color: '#b9c1b8'
