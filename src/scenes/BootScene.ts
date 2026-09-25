@@ -10,6 +10,9 @@ export class BootScene extends Phaser.Scene {
     this.add.text(512, 384, '加载中...', {
       fontSize: '24px', color: '#ffffff'
     }).setOrigin(0.5);
+
+    this.load.image('bg_opening_scroll', '/assets/backgrounds/bg_opening_scroll.jpg');
+    this.load.image('bg_battle_wilds', '/assets/backgrounds/bg_battle_wilds.jpg');
   }
 
   create(): void {

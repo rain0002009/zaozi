@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { InkTextureGenerator } from '../visuals/InkTextures';
 import { InkVFX } from '../visuals/InkAtmosphere';
-import { KNIFE_COMBO } from '../combat/WeaponCombo';
+import { getWeaponCombo } from '../combat/WeaponCombo';
 import { CombatEngine } from '../combat/CombatEngine';
 import { AttackEvent, PlayerCharacter } from '../entities/PlayerCharacter';
 import { gameState, ROUTES, RouteDefinition, Stroke, STROKES } from '../state/GameState';
@@ -40,14 +40,6 @@ type Pickup = {
   ttl: number;
 };
 
-type TrailPoint = {
-  x: number;
-  y: number;
-  age: number;
-  comboStep: number;
-  side: string;
-};
-
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Container;
   private character!: PlayerCharacter;
@@ -78,11 +70,15 @@ export class GameScene extends Phaser.Scene {
   private abilityText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
   private pauseOverlay?: Phaser.GameObjects.Container;
-  private knifeTrail!: Phaser.GameObjects.Graphics;
-  private knifeTrailPoints: TrailPoint[] = [];
   private hitstopRemaining = 0;
 
   constructor() { super('Game'); }
+
+  preload(): void {
+    if (!this.textures.exists('bg_battle_wilds')) {
+      this.load.image('bg_battle_wilds', '/assets/backgrounds/bg_battle_wilds.jpg');
+    }
+  }
 
   create(): void {
     const run = gameState.expedition ?? gameState.startExpedition();
@@ -100,7 +96,6 @@ export class GameScene extends Phaser.Scene {
     this.encounterCleared = false;
     this.ended = false;
     this.paused = false;
-    this.knifeTrailPoints = [];
 
     this.drawArena();
     this.createPlayer();
@@ -111,24 +106,41 @@ export class GameScene extends Phaser.Scene {
 
   private drawArena(): void {
     this.cameras.main.setBackgroundColor('#111813');
-    this.add.rectangle(512, 390, 1024, 620, 0x27332b);
-    this.add.rectangle(512, 390, 914, 540, 0xd7d0ba).setStrokeStyle(5, this.route.accent, 0.8);
-    const ink = this.add.graphics().setDepth(0);
-    ink.fillStyle(0x313a31, 0.11);
-    for (let index = 0; index < 34; index += 1) {
-      ink.fillCircle(Phaser.Math.Between(70, 954), Phaser.Math.Between(124, 650), Phaser.Math.Between(4, 28));
+    this.add.rectangle(512, 390, 1024, 768, 0x111813).setDepth(-10);
+
+    if (this.textures.exists('bg_battle_wilds')) {
+      const arenaBg = this.add.image(512, 390, 'bg_battle_wilds')
+        .setDisplaySize(960, 560)
+        .setDepth(0);
+
+      if (this.route.id === 'ember') {
+        arenaBg.setTint(0xeb9c88);
+      } else if (this.route.id === 'rift') {
+        arenaBg.setTint(0xbba6dc);
+      } else if (this.route.id === 'boss') {
+        arenaBg.setTint(0xeddba6);
+      }
+
+      // Elegant inner border and accent boundary line
+      const borderGraphics = this.add.graphics().setDepth(1);
+      borderGraphics.lineStyle(2, this.route.accent, 0.55);
+      borderGraphics.strokeRoundedRect(56, 114, 912, 552, 6);
+    } else {
+      this.add.rectangle(512, 390, 1024, 620, 0x27332b);
+      this.add.rectangle(512, 390, 914, 540, 0xd7d0ba).setStrokeStyle(5, this.route.accent, 0.8);
+      const ink = this.add.graphics().setDepth(0);
+      ink.fillStyle(0x313a31, 0.11);
+      for (let index = 0; index < 34; index += 1) {
+        ink.fillCircle(Phaser.Math.Between(70, 954), Phaser.Math.Between(124, 650), Phaser.Math.Between(4, 28));
+      }
+      ink.lineStyle(1, 0x655f52, 0.18);
+      for (let x = 92; x < 950; x += 72) ink.lineBetween(x, 120, x - 80, 654);
     }
-    ink.lineStyle(1, 0x655f52, 0.18);
-    for (let x = 92; x < 950; x += 72) ink.lineBetween(x, 120, x - 80, 654);
-    this.add.text(512, 391, this.route.id === 'boss' ? '墨' : this.route.id === 'ember' ? '火' : this.route.id === 'rift' ? '鬼' : '野', {
-      fontFamily: 'serif', fontSize: '300px', color: '#232c25',
-    }).setOrigin(0.5).setAlpha(0.055);
   }
 
   private createPlayer(): void {
     this.player = this.add.container(512, 555).setDepth(5);
     this.character = new PlayerCharacter(this, this.player);
-    this.knifeTrail = this.add.graphics().setDepth(7).setName('knife-trail');
   }
 
   private createHud(): void {
@@ -255,7 +267,8 @@ export class GameScene extends Phaser.Scene {
     if (this.encounterCleared || this.ended || this.paused || !this.character.startAttack(attackAngle)) return;
 
     const weapon = gameState.getEquippedWeapon();
-    if (weapon.type === 'ranged') {
+    const isRanged = weapon.shape === '弓' || weapon.type === 'ranged';
+    if (isRanged) {
       // Fire ranged arrow
       const aimDir = new Phaser.Math.Vector2(Math.cos(this.aimAngle), Math.sin(this.aimAngle)).normalize();
       const speed = weapon.stats.projectileSpeed || 600;
@@ -282,10 +295,14 @@ export class GameScene extends Phaser.Scene {
 
   private spawnSlashArc(attack: AttackEvent): void {
     const weapon = gameState.getEquippedWeapon();
-    const attackSpec = KNIFE_COMBO.attacks[attack.comboStep - 1];
+    const combo = getWeaponCombo(weapon.shape || '刀');
+    const attackIndex = Math.max(0, Math.min(attack.comboStep - 1, combo.attacks.length - 1));
+    const attackSpec = combo.attacks[attackIndex];
     const facingSign = attack.side === 'left' ? -1 : 1;
     const baseAngle = attack.side === 'left' ? Math.PI : 0;
-    const range = weapon.stats.range * (attackSpec.range / 105);
+    const swordBeamTrait = weapon.traits?.find((t) => t.traitId === 'swordBeam');
+    const extraBeamRange = swordBeamTrait ? (Number(swordBeamTrait.params?.extraRange) || 45) : 0;
+    const range = (weapon.stats.range + extraBeamRange) * (attackSpec.range / 105);
 
     const colors: Record<string, { main: number; core: number }> = {
       wood: { main: 0x48b868, core: 0xc4ffd5 },
@@ -449,48 +466,6 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: mark, alpha: 0, y: ev.y - 45, duration: 400, onComplete: () => mark.destroy() });
       }
     });
-  }
-
-  private updateKnifeTrail(delta: number): void {
-    this.knifeTrailPoints.forEach((point) => { point.age += delta; });
-    this.knifeTrailPoints = this.knifeTrailPoints.filter((point) => point.age < 140);
-
-    if (this.character.action === 'attack') {
-      const tip = this.character.weaponTipWorld();
-      const previous = this.knifeTrailPoints[this.knifeTrailPoints.length - 1];
-      if (!previous || previous.comboStep !== this.character.comboStep || previous.side !== this.character.facing
-        || Phaser.Math.Distance.Between(previous.x, previous.y, tip.x, tip.y) >= 1.5) {
-        this.knifeTrailPoints.push({
-          x: tip.x, y: tip.y, age: 0,
-          comboStep: this.character.comboStep,
-          side: this.character.facing,
-        });
-      } else {
-        previous.x = tip.x;
-        previous.y = tip.y;
-        previous.age = 0;
-      }
-      this.knifeTrail.setData('tip', { x: tip.x, y: tip.y });
-    }
-
-    this.knifeTrail.clear();
-    const weapon = gameState.getEquippedWeapon();
-    const trailColor =
-      weapon.stats.element === 'fire' ? 0xdf4a28 :
-      weapon.stats.element === 'wood' ? 0x48b868 :
-      weapon.stats.element === 'metal' ? 0xf0d060 :
-      weapon.stats.element === 'earth' ? 0x9e7b50 : 0x34443a;
-
-    for (let index = 1; index < this.knifeTrailPoints.length; index += 1) {
-      const from = this.knifeTrailPoints[index - 1];
-      const to = this.knifeTrailPoints[index];
-      if (from.comboStep !== to.comboStep || from.side !== to.side) continue;
-      const life = 1 - to.age / 140;
-      const width = to.comboStep === 3 ? 7 : to.comboStep === 2 ? 4 : 5;
-      this.knifeTrail.lineStyle(Math.max(1, width * life), trailColor, 0.65 * life);
-      this.knifeTrail.lineBetween(from.x, from.y, to.x, to.y);
-    }
-    this.knifeTrail.setData('pointCount', this.knifeTrailPoints.length);
   }
 
   private castFire(): void {
@@ -750,7 +725,8 @@ export class GameScene extends Phaser.Scene {
   private takeDamage(rawDamage: number, incomingAngle = 0): void {
     if (this.time.now < this.invulnerableUntil || this.ended) return;
     const weapon = gameState.getEquippedWeapon();
-    const defenseMultiplier = weapon.type === 'defense' ? 0.55 : gameState.hasWord('盾') ? 0.65 : 1;
+    const isDefense = weapon.shape === '盾' || weapon.type === 'defense';
+    const defenseMultiplier = isDefense ? 0.55 : gameState.hasWord('盾') ? 0.65 : 1;
     const damage = Math.ceil(rawDamage * defenseMultiplier);
     this.hp = Math.max(0, this.hp - damage);
     this.invulnerableUntil = this.time.now + 520;
@@ -900,9 +876,12 @@ export class GameScene extends Phaser.Scene {
     );
     const attack = this.character.update(delta, direction, displacement, this.aimAngle);
     this.player.x = Phaser.Math.Clamp(this.player.x + this.character.rootMotion(delta), 72, 952);
-    this.updateKnifeTrail(delta);
     if (attack) {
-      this.spawnSlashArc(attack);
+      const weapon = gameState.getEquippedWeapon();
+      const hasSwordBeam = weapon.traits?.some((t) => t.traitId === 'swordBeam');
+      if (hasSwordBeam) {
+        this.spawnSlashArc(attack);
+      }
       this.resolveMeleeHit(attack);
     }
   }
@@ -928,8 +907,9 @@ export class GameScene extends Phaser.Scene {
     const run = gameState.expedition;
     const carried = run ? gameState.inventoryTotal(run.carried) : 0;
     const weapon = gameState.getEquippedWeapon();
+    const isDefense = weapon.shape === '盾' || weapon.type === 'defense';
     this.hpFill?.setDisplaySize(176 * (this.hp / (run?.maxHp ?? 100)), 14);
-    this.hpText?.setText(`生命 ${this.hp}/${run?.maxHp ?? 100}${weapon.type === 'defense' ? ' · 盾减伤 45%' : ''}`);
+    this.hpText?.setText(`生命 ${this.hp}/${run?.maxHp ?? 100}${isDefense ? ' · 盾减伤 45%' : ''}`);
     this.enemyText?.setText(`字怪 ${this.enemies.length}`);
     this.lootText?.setText(`携带笔画 ${carried}`);
     const fire = gameState.hasWord('火') ? this.fireCooldown > 0 ? `火 ${Math.ceil(this.fireCooldown / 100) / 10}s` : '火 就绪' : '火 未合成';
