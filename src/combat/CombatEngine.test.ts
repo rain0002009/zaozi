@@ -68,4 +68,40 @@ describe('CombatEngine Deep Domain Module', () => {
     expect(result.hits[0].lifeStealAmount).toBeGreaterThanOrEqual(1);
     expect(result.totalLifeSteal).toBe(result.hits[0].lifeStealAmount);
   });
+
+  it('supports distinct combo steps and multipliers for different weapon shapes', () => {
+    const axe = COMPOUND_WEAPONS.开山斧; // shape 斧, 2 steps
+    expect(axe.shape).toBe('斧');
+    const axeDefender: CombatDefender = { id: 'target', x: 140, y: 100, hp: 300, maxHp: 300 };
+    const axeStep1 = CombatEngine.resolveMeleeAttack({ ...defaultAttacker, comboStep: 1 }, axe, [axeDefender]);
+    const axeStep2 = CombatEngine.resolveMeleeAttack({ ...defaultAttacker, comboStep: 2 }, axe, [axeDefender]);
+    expect(axeStep1.hits[0].damage).toBe(Math.round(axe.stats.damage * 2.0));
+    expect(axeStep2.hits[0].damage).toBe(Math.round(axe.stats.damage * 2.85));
+
+    const sword = COMPOUND_WEAPONS.青钢剑; // shape 剑, 5 steps
+    expect(sword.shape).toBe('剑');
+    const swordDefender: CombatDefender = { id: 'target', x: 140, y: 100, hp: 300, maxHp: 300 };
+    const swordStep5 = CombatEngine.resolveMeleeAttack({ ...defaultAttacker, comboStep: 5 }, sword, [swordDefender]);
+    expect(swordStep5.hits[0].damage).toBe(Math.round(sword.stats.damage * 1.85));
+    expect(swordStep5.cameraShake?.duration).toBe(90); // Finisher camera shake
+  });
+
+  it('extends attack range and emits swordBeamRelease visual event when swordBeam trait is equipped', () => {
+    const woodKnife = COMPOUND_WEAPONS.木刀; // range: 68, no swordBeam
+    const sword = COMPOUND_WEAPONS.青钢剑; // range: 110, has swordBeam (+45 extraRange)
+
+    // Target is at distance 85 (x=185 vs attacker x=100)
+    // WoodKnife range on step 1 is ~72.5px, cannot reach 85px
+    const midRangeDefender: CombatDefender = { id: 'mid-dist', x: 185, y: 100, hp: 50, maxHp: 50 };
+
+    const woodResult = CombatEngine.resolveMeleeAttack(defaultAttacker, woodKnife, [midRangeDefender]);
+    expect(woodResult.hitCount).toBe(0);
+    expect(woodResult.visualEvents.some((e) => e.type === 'swordBeamRelease')).toBe(false);
+
+    // Sword has swordBeam, range easily reaches 85px
+    const swordResult = CombatEngine.resolveMeleeAttack(defaultAttacker, sword, [midRangeDefender]);
+    expect(swordResult.hitCount).toBe(1);
+    expect(swordResult.hits[0].targetId).toBe('mid-dist');
+    expect(swordResult.visualEvents.some((e) => e.type === 'swordBeamRelease')).toBe(true);
+  });
 });

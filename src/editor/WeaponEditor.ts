@@ -2,12 +2,16 @@ import {
   CompoundEquipment,
   DEFAULT_EQUIPMENT_PRESETS,
   EquipmentCategory,
+  EquipmentVisual,
   ElementType,
   TRAIT_REGISTRY,
   TraitId,
   TraitInstance,
   WeaponActionType,
   WeaponShape,
+  extractEquipmentStats,
+  getEquipmentActionType,
+  getEquipmentElement,
 } from '../data/equipmentTypes';
 import { equipmentRepository } from '../data/EquipmentRepository';
 
@@ -18,6 +22,8 @@ export class WeaponEditorApp {
   private currentFilter: 'all' | EquipmentCategory = 'all';
   private searchQuery: string = '';
   private jsonViewMode: 'selected' | 'all' = 'selected';
+  private activeAnchorMode: 'grip' | 'tip' = 'grip';
+  private imageCache: Map<string, HTMLImageElement> = new Map();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -26,13 +32,21 @@ export class WeaponEditorApp {
 
   private loadInitialData(): void {
     this.equipmentList = equipmentRepository.getAll();
+    this.equipmentList.forEach((eq) => {
+      eq.type = getEquipmentActionType(eq.shape || '刀');
+      eq.element = getEquipmentElement(eq);
+    });
     this.selectedId = this.equipmentList[0]?.id || '';
   }
 
   private saveData(showToastFeedback = false): void {
+    this.equipmentList.forEach((eq) => {
+      eq.type = getEquipmentActionType(eq.shape || '刀');
+      eq.element = getEquipmentElement(eq);
+    });
     equipmentRepository.saveAll(this.equipmentList);
     if (showToastFeedback) {
-      this.showToast('💾 武器数据库已保存！游戏内数值与配方已实时同步生效。');
+      this.showToast('💾 武器数据库已保存！游戏内数值、连击与拓片锚点已实时同步生效。');
     }
   }
 
@@ -45,7 +59,7 @@ export class WeaponEditorApp {
             <span class="we-logo">⚔️</span>
             <div>
               <h1>铸武台 · 天工配置台</h1>
-              <p class="we-subtitle">武器与防具基础属性、汉字配方及法则特性配置生成器</p>
+              <p class="we-subtitle">统一特性模型、六大兵刃连击及外形拓片双锚点配置系统</p>
             </div>
           </div>
           <div class="we-header-stats">
@@ -96,108 +110,101 @@ export class WeaponEditorApp {
                 <button class="we-btn we-btn-xs we-btn-gold" id="btn-copy-json">📋 复制</button>
                 <button class="we-btn we-btn-xs we-btn-outline" id="btn-download-json">💾 下载</button>
                 <button class="we-btn we-btn-xs we-btn-outline" id="btn-import-json">📂 导入</button>
+                <input type="file" id="file-import-input" accept=".json" style="display:none;" />
               </div>
             </div>
-            <div class="we-json-viewer-box">
+            <div class="we-json-viewer-box" id="json-viewer-box">
               <pre><code id="json-code"></code></pre>
             </div>
             <div class="we-json-footer">
-              <span class="we-tip">💡 武器数据库已与游戏本体打通，修改后点击【💾 保存生效】即可实时在归字营与战斗中应用；亦可通过【下载/导入】进行备份迁移。</span>
+              <span class="we-tip">💡 提示：本数据完全本地化持久存储，配置实时生效。</span>
             </div>
           </aside>
         </div>
 
-        <!-- Hidden File Input for JSON import -->
-        <input type="file" id="file-import-input" accept=".json,application/json" style="display:none;" />
-
-        <!-- Floating Toast -->
-        <div id="we-toast" class="we-toast"></div>
+        <div class="we-toast" id="we-toast"></div>
       </div>
 
       <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: #131714; color: #ede7d8; font-family: "Source Han Serif SC", "Noto Serif SC", "PingFang SC", "Microsoft YaHei", serif; }
-        .we-app { display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }
-        
-        /* Header */
-        .we-header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 10px 24px; background: #19221c; border-bottom: 1px solid #2e3d31;
-          height: 62px; flex-shrink: 0;
+        .we-app {
+          display: flex; flex-direction: column; width: 100vw; height: 100vh;
+          background: #111512; color: #ede3ce; font-family: "Noto Serif SC", "PingFang SC", "Microsoft YaHei", serif;
+          overflow: hidden; user-select: none;
         }
-        .we-header-title { display: flex; align-items: center; gap: 14px; }
-        .we-logo { font-size: 28px; }
-        .we-header-title h1 { font-size: 19px; font-weight: 700; color: #f2e9d5; letter-spacing: 1px; }
-        .we-subtitle { font-size: 11px; color: #8e9e8f; margin-top: 2px; }
-        .we-header-stats { display: flex; gap: 10px; }
-        .we-badge { background: #232f26; border: 1px solid #36493b; padding: 4px 10px; border-radius: 4px; font-size: 12px; color: #b7c8b9; }
+        .we-header {
+          height: 60px; background: #18221a; border-bottom: 1px solid #2e3e31;
+          display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+        }
+        .we-header-title { display: flex; align-items: center; gap: 12px; }
+        .we-header-title h1 { margin: 0; font-size: 18px; font-weight: bold; color: #fdf5e6; letter-spacing: 1px; }
+        .we-header-title .we-subtitle { margin: 0; font-size: 11px; color: #8e9e8f; }
+        .we-logo { font-size: 24px; }
+        .we-header-stats { display: flex; gap: 12px; }
+        .we-badge { background: #222d24; border: 1px solid #37493a; padding: 4px 10px; border-radius: 4px; font-size: 12px; color: #a4b3a5; }
         .we-badge b { color: #d0b466; margin-left: 4px; }
         .we-header-actions { display: flex; gap: 10px; }
 
-        /* Buttons */
         .we-btn {
-          cursor: pointer; border: none; outline: none; border-radius: 4px; font-size: 13px; font-family: inherit;
-          padding: 7px 14px; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 5px;
+          cursor: pointer; border-radius: 4px; border: 1px solid transparent; font-family: inherit;
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s;
         }
-        .we-btn-primary { background: #35523b; color: #f2e8d3; border: 1px solid #577d5e; }
-        .we-btn-primary:hover { background: #44674c; border-color: #79a782; }
-        .we-btn-secondary { background: #232c25; color: #a9baa9; border: 1px solid #39473b; }
-        .we-btn-secondary:hover { background: #2d3930; color: #e0eedf; }
-        .we-btn-gold { background: #b89139; color: #1f1707; font-weight: 600; }
-        .we-btn-gold:hover { background: #d2a74c; }
-        .we-btn-outline { background: transparent; color: #c4d4c5; border: 1px solid #4a5c4e; }
-        .we-btn-outline:hover { background: #243026; border-color: #6a836f; }
-        .we-btn-danger { background: #572525; color: #fca5a5; border: 1px solid #843838; }
-        .we-btn-danger:hover { background: #733131; }
-        .we-btn-sm { padding: 5px 10px; font-size: 12px; }
-        .we-btn-xs { padding: 4px 8px; font-size: 11px; }
+        .we-btn-gold { background: linear-gradient(180deg, #d8bc70 0%, #aa8b38 100%); color: #181c15; border-color: #eed694; font-weight: bold; }
+        .we-btn-gold:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .we-btn-primary { background: #2b3a2e; color: #e9dec6; border-color: #405544; padding: 6px 14px; font-size: 13px; }
+        .we-btn-primary:hover { background: #354738; color: #ffffff; }
+        .we-btn-secondary { background: #212923; color: #9ab09d; border-color: #324034; padding: 6px 12px; font-size: 13px; }
+        .we-btn-secondary:hover { background: #2c382f; color: #dde8df; }
+        .we-btn-outline { background: transparent; color: #c4b89e; border-color: #3f5242; padding: 4px 10px; font-size: 12px; }
+        .we-btn-outline:hover { background: #232d25; border-color: #637f68; color: #f5eedf; }
+        .we-btn-danger { background: #4a211f; color: #fca5a5; border-color: #7f1d1d; }
+        .we-btn-danger:hover { background: #632927; color: #fee2e2; }
+        .we-btn-sm { padding: 5px 12px; font-size: 12px; }
+        .we-btn-xs { padding: 3px 8px; font-size: 11px; }
 
-        /* Body 3 Cols */
-        .we-body { display: flex; flex: 1; overflow: hidden; background: #151b16; }
-        .we-col { display: flex; flex-direction: column; overflow: hidden; }
-        .we-col-list { width: 310px; border-right: 1px solid #28352b; background: #18201a; flex-shrink: 0; }
-        .we-col-form { flex: 1; border-right: 1px solid #28352b; background: #151b16; overflow-y: auto; padding: 20px 24px; }
-        .we-col-json { width: 380px; background: #121613; flex-shrink: 0; }
+        .we-body { display: flex; flex: 1; overflow: hidden; }
+        .we-col { display: flex; flex-direction: column; height: 100%; }
+        .we-col-list { width: 310px; border-right: 1px solid #273429; background: #141b16; }
+        .we-col-form { flex: 1; overflow-y: auto; padding: 24px 32px; background: #131814; }
+        .we-col-json { width: 360px; border-left: 1px solid #273429; background: #151c17; }
 
-        /* Left List */
-        .we-list-header { padding: 14px 16px; border-bottom: 1px solid #28352b; display: flex; flex-direction: column; gap: 10px; }
+        .we-list-header { padding: 14px; border-bottom: 1px solid #263328; display: flex; flex-direction: column; gap: 10px; }
         .we-input {
-          background: #111512; border: 1px solid #334336; color: #e2ddd0; padding: 7px 10px; border-radius: 4px;
-          font-size: 13px; font-family: inherit; outline: none; transition: border 0.15s;
+          background: #19221b; border: 1px solid #304133; color: #ede3ce; padding: 7px 10px; border-radius: 4px;
+          font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.15s;
         }
-        .we-input:focus { border-color: #c9aa59; }
-        .we-search { width: 100%; }
-        .we-filter-bar { display: flex; gap: 6px; }
+        .we-input:focus { border-color: #c9aa59; box-shadow: 0 0 0 1px #c9aa59; }
+        .we-search { width: 100%; box-sizing: border-box; }
+        .we-filter-bar { display: flex; gap: 4px; }
         .we-chip {
-          cursor: pointer; background: #202b22; border: 1px solid #304134; color: #9aa89b; font-size: 11px;
-          padding: 4px 8px; border-radius: 12px; transition: all 0.15s;
+          cursor: pointer; background: #1d261f; border: 1px solid #2c392e; color: #8e9e8f; padding: 4px 8px;
+          font-size: 11px; border-radius: 12px; transition: all 0.15s;
         }
-        .we-chip.active, .we-chip:hover { background: #324636; border-color: #617f67; color: #e9f0e8; }
-        .we-list-actions { display: flex; gap: 8px; margin-top: 2px; }
-        .we-item-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-        
-        .we-item-card {
-          cursor: pointer; padding: 10px 12px; background: #1c251e; border: 1px solid #2b392e; border-radius: 5px;
-          display: flex; flex-direction: column; gap: 6px; transition: all 0.15s;
-        }
-        .we-item-card:hover { background: #222e25; border-color: #485c4d; }
-        .we-item-card.active { background: #28372c; border-color: #c5a454; box-shadow: 0 0 8px rgba(197, 164, 84, 0.15); }
-        .we-card-top { display: flex; align-items: center; justify-content: space-between; }
-        .we-card-name { font-size: 14px; font-weight: bold; color: #f0e8d6; display: flex; align-items: center; gap: 6px; }
-        .we-card-tools { display: flex; gap: 4px; opacity: 0.6; transition: opacity 0.15s; }
-        .we-item-card:hover .we-card-tools { opacity: 1; }
-        .we-card-words { display: flex; gap: 4px; align-items: center; font-size: 11px; color: #8e9e8f; }
-        .we-word-badge { background: #131914; border: 1px solid #3b4d3e; color: #e5dabf; padding: 1px 5px; border-radius: 3px; font-family: serif; }
-        .we-card-meta { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #869688; }
-        .we-elem-badge { padding: 1px 6px; border-radius: 3px; font-size: 10px; }
-        .we-elem-wood { background: #1f3d26; color: #78e096; }
-        .we-elem-fire { background: #471d18; color: #f97d6d; }
-        .we-elem-metal { background: #403613; color: #f5d862; }
-        .we-elem-earth { background: #3b2c1b; color: #dab484; }
-        .we-elem-water { background: #173740; color: #62d6f5; }
-        .we-elem-none { background: #252d27; color: #b7c5b9; }
+        .we-chip:hover { color: #d7e4d8; border-color: #465b4a; }
+        .we-chip.active { background: #2f4032; color: #fbf5e6; border-color: #c0a153; font-weight: bold; }
+        .we-list-actions { display: flex; gap: 8px; }
 
-        /* Center Form */
+        .we-item-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+        .we-item-card {
+          cursor: pointer; background: #19221b; border: 1px solid #2a372c; border-radius: 5px; padding: 10px 12px;
+          display: flex; flex-direction: column; gap: 6px; transition: all 0.12s;
+        }
+        .we-item-card:hover { background: #202b23; border-color: #495e4e; }
+        .we-item-card.active { background: #263329; border-color: #c9aa59; box-shadow: 0 0 8px rgba(201, 170, 89, 0.2); }
+        .we-card-top { display: flex; justify-content: space-between; align-items: center; }
+        .we-card-name { font-size: 14px; font-weight: bold; color: #fdf5e6; }
+        .we-card-tools { display: flex; gap: 4px; opacity: 0.6; }
+        .we-item-card:hover .we-card-tools { opacity: 1; }
+        .we-card-words { display: flex; gap: 4px; font-size: 11px; color: #8b998c; align-items: center; }
+        .we-word-badge { background: #2a392d; border: 1px solid #3d5040; color: #f0eae1; font-weight: bold; padding: 1px 5px; border-radius: 3px; }
+        .we-card-meta { display: flex; align-items: center; justify-content: space-between; font-size: 11px; margin-top: 2px; }
+        .we-elem-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 500; }
+        .we-elem-none { background: #222923; color: #9aa99c; }
+        .we-elem-wood { background: #1b3823; color: #72e08e; border: 1px solid #2f5f3c; }
+        .we-elem-fire { background: #3d1c16; color: #ff8266; border: 1px solid #6b2f24; }
+        .we-elem-metal { background: #383416; color: #ffd866; border: 1px solid #635c24; }
+        .we-elem-earth { background: #2d2319; color: #deb583; border: 1px solid #52402e; }
+        .we-elem-water { background: #132a33; color: #6be3ff; border: 1px solid #234c5c; }
+
         .we-section { background: #1b231d; border: 1px solid #2e3e31; border-radius: 6px; padding: 16px 20px; margin-bottom: 18px; }
         .we-section-title { font-size: 15px; font-weight: bold; color: #e9dec6; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #273429; padding-bottom: 8px; }
         .we-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
@@ -217,7 +224,6 @@ export class WeaponEditorApp {
         .we-words-preview { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
         .we-preview-char { background: #253327; border: 1px solid #c9aa59; color: #fbf5e6; font-size: 18px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
 
-        /* Traits Section */
         .we-trait-pool { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; background: #141b15; padding: 12px; border-radius: 6px; border: 1px dashed #344837; }
         .we-trait-btn {
           cursor: pointer; background: #212c23; border: 1px solid #384d3b; color: #cfded0; font-size: 12px;
@@ -238,7 +244,6 @@ export class WeaponEditorApp {
         .we-param-label { font-size: 11px; color: #a2b0a3; display: flex; justify-content: space-between; }
         .we-param-unit { color: #6f8070; font-size: 10px; }
 
-        /* Col 3: Right JSON */
         .we-json-header {
           padding: 10px 14px; border-bottom: 1px solid #273429; display: flex; align-items: center;
           justify-content: space-between; background: #171d18;
@@ -258,7 +263,6 @@ export class WeaponEditorApp {
         .we-json-footer { padding: 10px 14px; border-top: 1px solid #232f25; background: #141a15; }
         .we-tip { font-size: 11px; color: #7f9181; }
 
-        /* Toast */
         .we-toast {
           position: fixed; bottom: 24px; right: 24px; background: #2a392d; border: 1px solid #c9aa59;
           color: #f7eed8; padding: 10px 18px; border-radius: 5px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,0.5);
@@ -266,7 +270,6 @@ export class WeaponEditorApp {
         }
         .we-toast.show { opacity: 1; transform: translateY(0); }
 
-        /* Scrollbars */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #131714; }
         ::-webkit-scrollbar-thumb { background: #2d3b30; border-radius: 3px; }
@@ -299,50 +302,51 @@ export class WeaponEditorApp {
     const elTotal = document.getElementById('stat-total');
     const elWeapon = document.getElementById('stat-weapon');
     const elArmor = document.getElementById('stat-armor');
-
     if (elTotal) elTotal.textContent = String(total);
     if (elWeapon) elWeapon.textContent = String(weapon);
     if (elArmor) elArmor.textContent = String(armor);
   }
 
   private getSelectedEquipment(): CompoundEquipment | undefined {
-    return this.equipmentList.find((e) => e.id === this.selectedId) || this.equipmentList[0];
+    return this.equipmentList.find((e) => e.id === this.selectedId);
   }
 
   private bindGlobalEvents(): void {
-    // Search input
+    // Search
     const searchInput = document.getElementById('input-search') as HTMLInputElement;
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        this.searchQuery = (e.target as HTMLInputElement).value.trim().toLowerCase();
-        this.updateLeftList();
-      });
-    }
+    searchInput?.addEventListener('input', () => {
+      this.searchQuery = searchInput.value.trim().toLowerCase();
+      this.updateLeftList();
+    });
 
-    // Filter chips
-    const chips = this.container.querySelectorAll('.we-chip');
-    chips.forEach((chip) => {
+    // Category filter chips
+    document.querySelectorAll('.we-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
-        chips.forEach((c) => c.classList.remove('active'));
+        document.querySelectorAll('.we-chip').forEach((c) => c.classList.remove('active'));
         chip.classList.add('active');
         this.currentFilter = chip.getAttribute('data-filter') as any;
         this.updateLeftList();
       });
     });
 
-    // Add weapon / armor
-    document.getElementById('btn-add-weapon')?.addEventListener('click', () => this.addNewEquipment('weapon'));
-    document.getElementById('btn-add-armor')?.addEventListener('click', () => this.addNewEquipment('armor'));
+    // Add buttons
+    document.getElementById('btn-add-weapon')?.addEventListener('click', () => {
+      this.addNewEquipment('weapon');
+    });
+    document.getElementById('btn-add-armor')?.addEventListener('click', () => {
+      this.addNewEquipment('armor');
+    });
 
-    // Save all to database
+    // Save all button
     document.getElementById('btn-save-all')?.addEventListener('click', () => {
       this.saveData(true);
     });
 
-    // Reset default presets
+    // Reset button
     document.getElementById('btn-reset')?.addEventListener('click', () => {
-      if (confirm('确定要恢复为游戏初始默认预设吗？当前未导出的修改将被重置。')) {
-        this.equipmentList = equipmentRepository.resetToDefaults();
+      if (confirm('确认恢复初始默认预设吗？当前所有未导出的改动将被覆盖重置。')) {
+        equipmentRepository.resetToDefaults();
+        this.equipmentList = equipmentRepository.getAll();
         this.selectedId = this.equipmentList[0]?.id || '';
         this.updateLeftList();
         this.renderSelectedForm();
@@ -443,25 +447,28 @@ export class WeaponEditorApp {
       shape: isWeapon ? '刀' : '盾',
       element: 'none',
       description: '新凝结铸造的神秘兵器，蓄势待发。',
-      summary: isWeapon ? '基础斩击，伤害 15，击退 120。' : '抵御伤害，减伤 25%。',
+      summary: isWeapon ? '基础挥砍，伤害 15，击退 120。' : '抵御伤害，减伤 25%。',
       baseStats: isWeapon
         ? { damage: 15, attackSpeed: 1.0, range: 110, knockback: 120 }
         : { damageReduction: 0.25, bonusHp: 30, knockback: 150 },
       traits: isWeapon
         ? [
-            {
-              traitId: 'knockback',
-              name: '击退震荡',
-              params: { force: 140, stunMs: 50 },
-            },
+            { traitId: 'damage', name: '伤害', params: { value: 15 } },
+            { traitId: 'attackSpeed', name: '攻速', params: { value: 1.0 } },
+            { traitId: 'range', name: '范围', params: { value: 110 } },
+            { traitId: 'knockback', name: '击退', params: { force: 120, stunMs: 50 } },
           ]
         : [
-            {
-              traitId: 'thorns',
-              name: '荆棘反噬',
-              params: { reflectRatio: 30 },
-            },
+            { traitId: 'damageReduction', name: '减伤', params: { value: 25 } },
+            { traitId: 'bonusHp', name: '生命', params: { value: 30 } },
+            { traitId: 'thorns', name: '反伤', params: { reflectRatio: 30 } },
           ],
+      visual: {
+        gripAnchor: { x: 0.2, y: 0.5 },
+        tipAnchor: { x: 0.95, y: 0.5 },
+        rotationOffsetDeg: 0,
+        scale: 1.0,
+      },
     };
 
     this.equipmentList.unshift(newEq);
@@ -544,14 +551,16 @@ export class WeaponEditorApp {
     container.innerHTML = filtered
       .map((item) => {
         const isActive = item.id === this.selectedId;
-        const elem = elemMap[item.element] || elemMap.none;
+        const derivedElem = getEquipmentElement(item);
+        const elem = elemMap[derivedElem] || elemMap.none;
         const icon = item.category === 'weapon' ? '⚔️' : item.category === 'armor' ? '🛡️' : '📿';
         const traitsCount = item.traits?.length || 0;
+        const hasRubbing = item.visual?.imageDataUrl ? '🖼️' : '';
 
         return `
           <div class="we-item-card ${isActive ? 'active' : ''}" data-id="${item.id}">
             <div class="we-card-top">
-              <span class="we-card-name">${icon} ${item.name}</span>
+              <span class="we-card-name">${icon} ${item.name} ${hasRubbing}</span>
               <div class="we-card-tools">
                 <button class="we-btn we-btn-xs we-btn-outline btn-clone" data-id="${item.id}" title="复制此装备">📑</button>
                 <button class="we-btn we-btn-xs we-btn-danger btn-delete" data-id="${item.id}" title="删除此装备">🗑️</button>
@@ -571,10 +580,8 @@ export class WeaponEditorApp {
       })
       .join('');
 
-    // Attach click events
     container.querySelectorAll('.we-item-card').forEach((card) => {
       card.addEventListener('click', (e) => {
-        // avoid trigger if click inside tools
         if ((e.target as HTMLElement).closest('.we-card-tools')) return;
         const id = card.getAttribute('data-id');
         if (id) {
@@ -616,12 +623,29 @@ export class WeaponEditorApp {
     }
 
     const isWeapon = eq.category === 'weapon';
+    const stats = extractEquipmentStats(eq);
+
+    // Group traits into categories
+    const mechanicsTraits = Object.values(TRAIT_REGISTRY).filter((t) => t.category === 'mechanic');
+    const statTraits = Object.values(TRAIT_REGISTRY).filter((t) => t.category === 'stat');
+    const elementTraits = Object.values(TRAIT_REGISTRY).filter((t) => t.category === 'element');
+
+    const derivedElem = getEquipmentElement(eq);
+    const elemMap: Record<ElementType, { name: string; cls: string }> = {
+      none: { name: '无属性 (墨色)', cls: 'we-elem-none' },
+      wood: { name: '木属性 (翠墨 · 迅捷穿透)', cls: 'we-elem-wood' },
+      fire: { name: '火属性 (赤焰 · 爆燃灼烧)', cls: 'we-elem-fire' },
+      metal: { name: '金属性 (金芒 · 破甲锋锐)', cls: 'we-elem-metal' },
+      earth: { name: '土属性 (岩黄 · 崩山厚重)', cls: 'we-elem-earth' },
+      water: { name: '水属性 (幽碧 · 润物绵长)', cls: 'we-elem-water' },
+    };
+    const currentElemInfo = elemMap[derivedElem] || elemMap.none;
 
     form.innerHTML = `
       <!-- 1. 基础信息 Section -->
       <section class="we-section">
         <div class="we-section-title">
-          <span>📜 基础信息与配方</span>
+          <span>📜 基础信息与构字配方</span>
         </div>
         <div class="we-form-grid">
           <div class="we-form-field">
@@ -641,7 +665,7 @@ export class WeaponEditorApp {
             </select>
           </div>
           <div class="we-form-field">
-            <label class="we-label">组成字配方 (手动输入汉字，逗号或空格隔开) <span>*</span></label>
+            <label class="we-label">组成字配方 (手动输入汉字，逗号隔开) <span>*</span></label>
             <input type="text" id="eq-words" class="we-input" value="${eq.words.join(', ')}" placeholder="如：木, 刀" />
             <div class="we-words-preview" id="words-preview-box">
               ${eq.words.map((w) => `<div class="we-preview-char">${w}</div>`).join('')}
@@ -660,41 +684,96 @@ export class WeaponEditorApp {
         </div>
       </section>
 
-      <!-- 2. 视觉形态与动作模组 Section -->
+      <!-- 2. 视觉形态、六大连招与外形拓片打点 Section -->
       <section class="we-section">
         <div class="we-section-title">
-          <span>🎨 视觉形态与战斗模组</span>
+          <span>🎨 视觉形态、连招模组与兵刃拓片 (Sprite & Anchors)</span>
         </div>
-        <div class="we-form-grid">
+        <div class="we-form-grid" style="grid-template-columns: 1.2fr 1fr;">
           <div class="we-form-field">
-            <label class="we-label">攻击方式 Action Type</label>
-            <select id="eq-type" class="we-select">
-              <option value="melee" ${eq.type === 'melee' ? 'selected' : ''}>近战突进/挥斩 (Melee)</option>
-              <option value="ranged" ${eq.type === 'ranged' ? 'selected' : ''}>远程弹道射击 (Ranged)</option>
-              <option value="defense" ${eq.type === 'defense' ? 'selected' : ''}>防御抵挡反冲 (Defense)</option>
-            </select>
-          </div>
-          <div class="we-form-field">
-            <label class="we-label">水墨兵刃形态 Shape</label>
+            <label class="we-label">兵刃形态 Shape (决定连招模组与动作特性)</label>
             <select id="eq-shape" class="we-select">
-              <option value="刀" ${eq.shape === '刀' ? 'selected' : ''}>刀 (刀光弧月连斩)</option>
-              <option value="弓" ${eq.shape === '弓' ? 'selected' : ''}>弓 (张弦飞矢射击)</option>
-              <option value="枪" ${eq.shape === '枪' ? 'selected' : ''}>枪 (远距破阵突刺)</option>
-              <option value="斧" ${eq.shape === '斧' ? 'selected' : ''}>斧 (重劈撼地震波)</option>
-              <option value="盾" ${eq.shape === '盾' ? 'selected' : ''}>盾 (坚固格挡冲锋)</option>
+              <option value="刀" ${eq.shape === '刀' ? 'selected' : ''}>刀 (3 连击 · 均衡劈撩)</option>
+              <option value="枪" ${eq.shape === '枪' ? 'selected' : ''}>枪 (4 连击 · 远距疾刺)</option>
+              <option value="剑" ${eq.shape === '剑' ? 'selected' : ''}>剑 (5 连击 · 灵动连绵)</option>
+              <option value="戟" ${eq.shape === '戟' ? 'selected' : ''}>戟 (3 连击 · 长柄横扫)</option>
+              <option value="斧" ${eq.shape === '斧' ? 'selected' : ''}>斧 (2 连击 · 重型破阵)</option>
+              <option value="弓" ${eq.shape === '弓' ? 'selected' : ''}>弓 (3 连射 · 远程贯通)</option>
+              <option value="盾" ${eq.shape === '盾' ? 'selected' : ''}>盾 (坚固格挡 · 防御反震)</option>
             </select>
           </div>
           <div class="we-form-field">
-            <label class="we-label">五行属性 Element</label>
-            <select id="eq-element" class="we-select">
-              <option value="none" ${eq.element === 'none' ? 'selected' : ''}>无属性 (墨色)</option>
-              <option value="wood" ${eq.element === 'wood' ? 'selected' : ''}>木属性 (翠墨 · 迅捷穿透)</option>
-              <option value="fire" ${eq.element === 'fire' ? 'selected' : ''}>火属性 (赤焰 · 爆燃灼烧)</option>
-              <option value="metal" ${eq.element === 'metal' ? 'selected' : ''}>金属性 (金芒 · 破甲锋锐)</option>
-              <option value="earth" ${eq.element === 'earth' ? 'selected' : ''}>土属性 (岩黄 · 崩山厚重)</option>
-              <option value="water" ${eq.element === 'water' ? 'selected' : ''}>水属性 (幽碧 · 润物绵长)</option>
-            </select>
+            <label class="we-label">行属灵威 Element (由装配特性自动推导)</label>
+            <div style="height: 38px; display: flex; align-items: center; padding: 0 12px; background: #121913; border: 1px solid #28372b; border-radius: 4px;">
+              <span class="we-elem-badge ${currentElemInfo.cls}" style="font-size: 13px;">${currentElemInfo.name}</span>
+              <span style="font-size: 12px; color: #849887; margin-left: 8px;">（添加五行特性即生效）</span>
+            </div>
           </div>
+        </div>
+
+        <!-- Custom Sprite Upload & Interactive Anchors Editor -->
+        <div style="margin-top: 16px; background: #151b16; border: 1px dashed #304033; border-radius: 6px; padding: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <span style="font-size: 13px; font-weight: bold; color: #dfc068;">🖼️ 自定义兵刃拓片与双锚点校准</span>
+            <div style="display: flex; gap: 8px;">
+              <input type="file" id="input-rubbing-file" accept="image/*" style="display:none;" />
+              <button class="we-btn we-btn-sm we-btn-gold" id="btn-upload-rubbing">📤 上传外形图片</button>
+              ${eq.visual?.imageDataUrl ? `<button class="we-btn we-btn-sm we-btn-danger" id="btn-remove-rubbing">✕ 清除贴图 (恢复水墨)</button>` : ''}
+            </div>
+          </div>
+
+          ${eq.visual?.imageDataUrl ? `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px;">
+              <!-- Interactive Pin Canvas -->
+              <div>
+                <div style="font-size: 11px; color: #a0b2a2; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                  <span>画板点选模式：</span>
+                  <div style="display: flex; gap: 4px;">
+                    <button class="we-btn we-btn-xs ${this.activeAnchorMode === 'grip' ? 'we-btn-gold' : 'we-btn-outline'}" id="btn-mode-grip">
+                      🟢 握持点 [${Math.round((eq.visual?.gripAnchor?.x ?? 0.2) * 100)}%, ${Math.round((eq.visual?.gripAnchor?.y ?? 0.5) * 100)}%]
+                    </button>
+                    <button class="we-btn we-btn-xs ${this.activeAnchorMode === 'tip' ? 'we-btn-gold' : 'we-btn-outline'}" id="btn-mode-tip">
+                      🔴 刃尖点 [${Math.round((eq.visual?.tipAnchor?.x ?? 0.95) * 100)}%, ${Math.round((eq.visual?.tipAnchor?.y ?? 0.5) * 100)}%]
+                    </button>
+                  </div>
+                </div>
+                <div style="background: #0d120e; border: 1px solid #28372b; border-radius: 4px; height: 160px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; cursor: crosshair;">
+                  <canvas id="canvas-anchor-editor" width="300" height="150" style="width: 100%; height: 100%; object-fit: contain;"></canvas>
+                </div>
+                <div style="font-size: 10px; color: #728474; margin-top: 4px;">
+                  提示：切换上方按钮后在图片上直接点击定位。绿色为手握持手柄点，红色为刀尖/发射点。
+                </div>
+              </div>
+
+              <!-- Offset controls & Handheld preview -->
+              <div>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <div class="we-form-field">
+                    <label class="we-label">朝向旋转校准角: <b id="val-rot-deg" style="color:#dfc068;">${eq.visual?.rotationOffsetDeg ?? 0}°</b></label>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                      <input type="range" id="input-rot-deg" min="-180" max="180" step="5" value="${eq.visual?.rotationOffsetDeg ?? 0}" style="flex:1;" />
+                      <button class="we-btn we-btn-xs we-btn-outline" id="btn-rot-0">0°</button>
+                      <button class="we-btn we-btn-xs we-btn-outline" id="btn-rot-45">45°</button>
+                      <button class="we-btn we-btn-xs we-btn-outline" id="btn-rot-90">90°</button>
+                    </div>
+                  </div>
+                  <div class="we-form-field">
+                    <label class="we-label">缩放倍率 Scale: <b id="val-scale" style="color:#dfc068;">${eq.visual?.scale ?? 1.0}x</b></label>
+                    <input type="range" id="input-scale" min="0.4" max="2.5" step="0.1" value="${eq.visual?.scale ?? 1.0}" />
+                  </div>
+                  <!-- Character live holding preview -->
+                  <div style="background: #101612; border: 1px solid #28372b; border-radius: 4px; height: 80px; display: flex; align-items: center; justify-content: center; position: relative;">
+                    <span style="position: absolute; top: 4px; left: 8px; font-size: 10px; color: #627564;">角色手持姿势预览</span>
+                    <canvas id="canvas-character-preview" width="240" height="76"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ` : `
+            <div style="text-align: center; padding: 20px; color: #728474; font-size: 12px;">
+              当前使用<strong>程序化水墨矢量</strong>表现。点击右上角【上传外形图片】可上传自定义拓片并可视化设置握持与刃尖锚点。
+            </div>
+          `}
         </div>
       </section>
 
@@ -709,66 +788,86 @@ export class WeaponEditorApp {
               ? `
             <div class="we-form-field">
               <label class="we-label">基础伤害 Damage</label>
-              <input type="number" id="stat-damage" class="we-input" value="${eq.baseStats?.damage ?? 15}" min="1" max="999" />
+              <input type="number" id="stat-damage" class="we-input" value="${stats.damage ?? 15}" min="1" max="999" />
             </div>
             <div class="we-form-field">
               <label class="we-label">攻击速度倍率 AttackSpeed</label>
-              <input type="number" id="stat-speed" class="we-input" step="0.05" value="${eq.baseStats?.attackSpeed ?? 1.0}" min="0.2" max="3.0" />
+              <input type="number" id="stat-speed" class="we-input" step="0.05" value="${stats.attackSpeed ?? 1.0}" min="0.2" max="3.0" />
             </div>
             <div class="we-form-field">
               <label class="we-label">攻击距离 Range (px)</label>
-              <input type="number" id="stat-range" class="we-input" value="${eq.baseStats?.range ?? 120}" min="30" max="1000" />
+              <input type="number" id="stat-range" class="we-input" value="${stats.range ?? 120}" min="30" max="1000" />
             </div>
             <div class="we-form-field">
               <label class="we-label">基础击退 Knockback</label>
-              <input type="number" id="stat-knockback" class="we-input" value="${eq.baseStats?.knockback ?? 120}" min="0" max="600" />
+              <input type="number" id="stat-knockback" class="we-input" value="${stats.knockback ?? 120}" min="0" max="600" />
             </div>
-            <div class="we-form-field" id="field-proj-speed" style="${eq.type === 'ranged' ? '' : 'display:none;'}">
+            <div class="we-form-field" id="field-proj-speed" style="${eq.shape === '弓' || eq.type === 'ranged' ? '' : 'display:none;'}">
               <label class="we-label">弹道飞行速度 ProjectileSpeed</label>
-              <input type="number" id="stat-projspeed" class="we-input" value="${eq.baseStats?.projectileSpeed ?? 580}" min="100" max="2000" />
+              <input type="number" id="stat-projspeed" class="we-input" value="${stats.projectileSpeed ?? 580}" min="100" max="2000" />
             </div>
           `
               : `
             <div class="we-form-field">
               <label class="we-label">受创减伤率 DamageReduction (%)</label>
-              <input type="number" id="stat-reduction" class="we-input" value="${Math.round((eq.baseStats?.damageReduction ?? 0.3) * 100)}" min="0" max="90" />
+              <input type="number" id="stat-reduction" class="we-input" value="${Math.round((stats.damageReduction ?? 0.3) * 100)}" min="0" max="90" />
             </div>
             <div class="we-form-field">
               <label class="we-label">额外生命上限 Bonus HP</label>
-              <input type="number" id="stat-bonushp" class="we-input" value="${eq.baseStats?.bonusHp ?? 30}" min="0" max="500" />
+              <input type="number" id="stat-bonushp" class="we-input" value="${stats.bonusHp ?? 30}" min="0" max="500" />
             </div>
             <div class="we-form-field">
               <label class="we-label">反弹冲击 Knockback</label>
-              <input type="number" id="stat-knockback" class="we-input" value="${eq.baseStats?.knockback ?? 180}" min="0" max="600" />
+              <input type="number" id="stat-knockback" class="we-input" value="${stats.knockback ?? 180}" min="0" max="600" />
             </div>
           `
           }
         </div>
       </section>
 
-      <!-- 4. 特性装配系统 Section -->
+      <!-- 4. 一切皆特性：法则特性装配 Section -->
       <section class="we-section">
         <div class="we-section-title">
-          <span>✨ 法则特性装配 (Traits System)</span>
+          <span>✨ 统一特性装配 (Everything is a Trait)</span>
           <span style="font-size: 11px; font-weight: normal; color: #8e9e8f; margin-left: auto;">
-            点击下方特性卡片即可装配，装配后可自定义每项特性的具体强度数值
+            所有机制、数值与五行行属均作为特性统一装配与调节
           </span>
         </div>
 
-        <!-- Available Traits Pool -->
-        <label class="we-label" style="margin-bottom: 8px; display:block;">【待选法则特性库】（点击添加至当前装备）:</label>
-        <div class="we-trait-pool" id="trait-pool">
-          ${Object.values(TRAIT_REGISTRY)
-            .map((t) => {
-              return `
-                <button class="we-trait-btn" data-trait-id="${t.id}" title="${t.summary}">
-                  <span>${t.icon}</span>
-                  <span>${t.name}</span>
-                  <span style="color:#d0b466; font-size:11px;">+</span>
-                </button>
-              `;
-            })
-            .join('')}
+        <!-- Available Traits Pool (Categorized) -->
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #dfc068; margin-bottom: 6px; font-weight: bold;">⚡ 机制特性 (点击装配):</div>
+          <div class="we-trait-pool" id="trait-pool-mechanic">
+            ${mechanicsTraits.map((t) => `
+              <button class="we-trait-btn" data-trait-id="${t.id}" title="${t.summary}">
+                <span>${t.icon}</span>
+                <span>${t.name}</span>
+                <span style="color:#d0b466; font-size:11px;">+</span>
+              </button>
+            `).join('')}
+          </div>
+
+          <div style="font-size: 12px; color: #6be3ff; margin-bottom: 6px; font-weight: bold;">🗡️ 数值特性 (点击装配):</div>
+          <div class="we-trait-pool" id="trait-pool-stat">
+            ${statTraits.map((t) => `
+              <button class="we-trait-btn" data-trait-id="${t.id}" title="${t.summary}">
+                <span>${t.icon}</span>
+                <span>${t.name}</span>
+                <span style="color:#6be3ff; font-size:11px;">+</span>
+              </button>
+            `).join('')}
+          </div>
+
+          <div style="font-size: 12px; color: #72e08e; margin-bottom: 6px; font-weight: bold;">🌿 五行属性特性 (点击装配):</div>
+          <div class="we-trait-pool" id="trait-pool-element">
+            ${elementTraits.map((t) => `
+              <button class="we-trait-btn" data-trait-id="${t.id}" title="${t.summary}">
+                <span>${t.icon}</span>
+                <span>${t.name}</span>
+                <span style="color:#72e08e; font-size:11px;">+</span>
+              </button>
+            `).join('')}
+          </div>
         </div>
 
         <!-- Mounted Traits List -->
@@ -825,7 +924,7 @@ export class WeaponEditorApp {
                   .join('')
               : `
               <div style="padding: 24px; text-align: center; color: #6d806f; background: #131814; border: 1px dashed #2f3e32; border-radius: 4px; font-size: 13px;">
-                当前尚未装配任何法则特性，请在上方特性库中点击选择添加。
+                当前尚未装配任何特性，请在上方特性库中点击选择添加。
               </div>
             `
           }
@@ -834,6 +933,196 @@ export class WeaponEditorApp {
     `;
 
     this.bindFormEvents(eq);
+    if (eq.visual?.imageDataUrl) {
+      this.initVisualCanvases(eq);
+    }
+  }
+
+  private initVisualCanvases(eq: CompoundEquipment): void {
+    const dataUrl = eq.visual?.imageDataUrl;
+    if (!dataUrl) return;
+
+    let img = this.imageCache.get(dataUrl);
+    if (!img) {
+      img = new Image();
+      img.onload = () => {
+        this.imageCache.set(dataUrl, img!);
+        this.drawAnchorCanvas(eq);
+        this.drawCharacterPreview(eq);
+      };
+      img.src = dataUrl;
+    } else {
+      this.drawAnchorCanvas(eq);
+      this.drawCharacterPreview(eq);
+    }
+  }
+
+  private drawAnchorCanvas(eq: CompoundEquipment): void {
+    const canvas = document.getElementById('canvas-anchor-editor') as HTMLCanvasElement;
+    if (!canvas || !eq.visual?.imageDataUrl) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const img = this.imageCache.get(eq.visual.imageDataUrl);
+    if (!img || !img.complete) return;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+
+    // Draw dark grid background
+    ctx.fillStyle = '#0a0e0b';
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.strokeStyle = '#18241b';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < cw; x += 15) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, ch);
+      ctx.stroke();
+    }
+    for (let y = 0; y < ch; y += 15) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(cw, y);
+      ctx.stroke();
+    }
+
+    // Fit image inside canvas with padding
+    const pad = 20;
+    const maxW = cw - pad * 2;
+    const maxH = ch - pad * 2;
+    const scale = Math.min(maxW / img.width, maxH / img.height);
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+    const drawX = (cw - drawW) / 2;
+    const drawY = (ch - drawH) / 2;
+
+    // Draw sprite image
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+    // Draw image border
+    ctx.strokeStyle = '#354838';
+    ctx.strokeRect(drawX, drawY, drawW, drawH);
+
+    // Draw Grip Point (🟢 Green)
+    const grip = eq.visual.gripAnchor || { x: 0.2, y: 0.5 };
+    const gx = drawX + grip.x * drawW;
+    const gy = drawY + grip.y * drawH;
+
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(gx, gy, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Crosshair
+    ctx.beginPath();
+    ctx.moveTo(gx - 12, gy); ctx.lineTo(gx + 12, gy);
+    ctx.moveTo(gx, gy - 12); ctx.lineTo(gx, gy + 12);
+    ctx.stroke();
+
+    // Draw Tip Point (🔴 Red)
+    const tip = eq.visual.tipAnchor || { x: 0.95, y: 0.5 };
+    const tx = drawX + tip.x * drawW;
+    const ty = drawY + tip.y * drawH;
+
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(tx, ty, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Crosshair
+    ctx.beginPath();
+    ctx.moveTo(tx - 12, ty); ctx.lineTo(tx + 12, ty);
+    ctx.moveTo(tx, ty - 12); ctx.lineTo(tx, ty + 12);
+    ctx.stroke();
+
+    // Connecting line
+    ctx.strokeStyle = 'rgba(217, 192, 104, 0.4)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  private drawCharacterPreview(eq: CompoundEquipment): void {
+    const canvas = document.getElementById('canvas-character-preview') as HTMLCanvasElement;
+    if (!canvas || !eq.visual?.imageDataUrl) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const img = this.imageCache.get(eq.visual.imageDataUrl);
+    if (!img || !img.complete) return;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+
+    // Dark background
+    ctx.fillStyle = '#101612';
+    ctx.fillRect(0, 0, cw, ch);
+
+    const charX = 70;
+    const charY = ch / 2;
+
+    // Draw shadow
+    ctx.fillStyle = 'rgba(10, 14, 11, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(charX, charY + 16, 22, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw character body circle
+    ctx.fillStyle = '#243226';
+    ctx.strokeStyle = '#d2c6ab';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(charX, charY, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Facing red dot
+    ctx.fillStyle = '#e26a54';
+    ctx.beginPath();
+    ctx.arc(charX + 11, charY - 3, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // '人' Text
+    ctx.fillStyle = '#ede3ce';
+    ctx.font = '16px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('人', charX, charY);
+
+    // Hand position relative to character
+    const handX = charX + 14;
+    const handY = charY + 2;
+
+    // Draw weapon sprite attached at hand
+    ctx.save();
+    ctx.translate(handX, handY);
+
+    // Base resting angle + user rotation offset
+    const userRotDeg = eq.visual.rotationOffsetDeg || 0;
+    const restAngle = (-25 + userRotDeg) * (Math.PI / 180);
+    ctx.rotate(restAngle);
+
+    const scale = (eq.visual.scale || 1.0) * 0.45; // scale down for preview
+    const grip = eq.visual.gripAnchor || { x: 0.2, y: 0.5 };
+    const w = img.width * scale;
+    const h = img.height * scale;
+
+    ctx.drawImage(img, -grip.x * w, -grip.y * h, w, h);
+    ctx.restore();
   }
 
   private bindFormEvents(eq: CompoundEquipment): void {
@@ -842,7 +1131,6 @@ export class WeaponEditorApp {
     // ID
     const idInput = document.getElementById('eq-id') as HTMLInputElement;
     idInput?.addEventListener('change', () => {
-      const oldId = eq.id;
       const newId = idInput.value.trim();
       if (!newId) return;
       eq.id = newId;
@@ -907,88 +1195,236 @@ export class WeaponEditorApp {
       this.updateJsonViewer();
     });
 
-    // Visual & Action
-    const typeSelect = document.getElementById('eq-type') as HTMLSelectElement;
-    typeSelect?.addEventListener('change', () => {
-      eq.type = typeSelect.value as WeaponActionType;
-      const projSpeedField = document.getElementById('field-proj-speed');
-      if (projSpeedField) {
-        projSpeedField.style.display = eq.type === 'ranged' ? '' : 'none';
-      }
-      this.saveData();
-      this.updateJsonViewer();
-    });
-
+    // Weapon Shape (determines combo module and action type)
     const shapeSelect = document.getElementById('eq-shape') as HTMLSelectElement;
     shapeSelect?.addEventListener('change', () => {
       eq.shape = shapeSelect.value as WeaponShape;
+      eq.type = getEquipmentActionType(eq.shape);
+      const projSpeedField = document.getElementById('field-proj-speed');
+      if (projSpeedField) {
+        projSpeedField.style.display = eq.shape === '弓' ? '' : 'none';
+      }
       this.saveData();
       this.updateLeftList();
       this.updateJsonViewer();
     });
 
-    const elemSelect = document.getElementById('eq-element') as HTMLSelectElement;
-    elemSelect?.addEventListener('change', () => {
-      eq.element = elemSelect.value as ElementType;
+    // --- Image Upload & Anchor Events ---
+    const btnUpload = document.getElementById('btn-upload-rubbing');
+    const inputRubbingFile = document.getElementById('input-rubbing-file') as HTMLInputElement;
+    btnUpload?.addEventListener('click', () => {
+      inputRubbingFile?.click();
+    });
+
+    inputRubbingFile?.addEventListener('change', (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        if (!eq.visual) {
+          eq.visual = {
+            gripAnchor: { x: 0.2, y: 0.5 },
+            tipAnchor: { x: 0.95, y: 0.5 },
+            rotationOffsetDeg: 0,
+            scale: 1.0,
+          };
+        }
+        eq.visual.imageDataUrl = dataUrl;
+        this.saveData();
+        this.renderSelectedForm();
+        this.updateJsonViewer();
+        this.showToast('✓ 兵刃拓片上传成功！已开启双锚点定位。');
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('btn-remove-rubbing')?.addEventListener('click', () => {
+      if (confirm('确认清除当前外形拓片并恢复程序化水墨表现吗？')) {
+        eq.visual = undefined;
+        this.saveData();
+        this.renderSelectedForm();
+        this.updateJsonViewer();
+        this.showToast('已恢复程序化矢量水墨渲染。');
+      }
+    });
+
+    // Anchor mode toggle
+    const btnGrip = document.getElementById('btn-mode-grip');
+    const btnTip = document.getElementById('btn-mode-tip');
+    btnGrip?.addEventListener('click', () => {
+      this.activeAnchorMode = 'grip';
+      btnGrip.className = 'we-btn we-btn-xs we-btn-gold';
+      if (btnTip) btnTip.className = 'we-btn we-btn-xs we-btn-outline';
+    });
+    btnTip?.addEventListener('click', () => {
+      this.activeAnchorMode = 'tip';
+      btnTip.className = 'we-btn we-btn-xs we-btn-gold';
+      if (btnGrip) btnGrip.className = 'we-btn we-btn-xs we-btn-outline';
+    });
+
+    // Anchor canvas click to set point
+    const canvasEditor = document.getElementById('canvas-anchor-editor') as HTMLCanvasElement;
+    canvasEditor?.addEventListener('click', (e) => {
+      if (!eq.visual?.imageDataUrl) return;
+      const img = this.imageCache.get(eq.visual.imageDataUrl);
+      if (!img || !img.complete) return;
+
+      const rect = canvasEditor.getBoundingClientRect();
+      const scaleX = canvasEditor.width / rect.width;
+      const scaleY = canvasEditor.height / rect.height;
+      const clickX = (e.clientX - rect.left) * scaleX;
+      const clickY = (e.clientY - rect.top) * scaleY;
+
+      const pad = 20;
+      const maxW = canvasEditor.width - pad * 2;
+      const maxH = canvasEditor.height - pad * 2;
+      const scale = Math.min(maxW / img.width, maxH / img.height);
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+      const drawX = (canvasEditor.width - drawW) / 2;
+      const drawY = (canvasEditor.height - drawH) / 2;
+
+      // Calculate normalized relative coords [0.0 ~ 1.0]
+      const relX = Math.max(0, Math.min(1, (clickX - drawX) / drawW));
+      const relY = Math.max(0, Math.min(1, (clickY - drawY) / drawH));
+
+      if (this.activeAnchorMode === 'grip') {
+        eq.visual.gripAnchor = { x: Math.round(relX * 100) / 100, y: Math.round(relY * 100) / 100 };
+      } else {
+        eq.visual.tipAnchor = { x: Math.round(relX * 100) / 100, y: Math.round(relY * 100) / 100 };
+      }
+
       this.saveData();
-      this.updateLeftList();
+      this.renderSelectedForm();
       this.updateJsonViewer();
     });
 
-    // Stats
+    // Rotation Offset slider and preset buttons
+    const rotInput = document.getElementById('input-rot-deg') as HTMLInputElement;
+    const rotValEl = document.getElementById('val-rot-deg');
+    rotInput?.addEventListener('input', () => {
+      if (!eq.visual) return;
+      const deg = Number(rotInput.value);
+      eq.visual.rotationOffsetDeg = deg;
+      if (rotValEl) rotValEl.textContent = `${deg}°`;
+      this.drawCharacterPreview(eq);
+      this.saveData();
+      this.updateJsonViewer();
+    });
+
+    document.getElementById('btn-rot-0')?.addEventListener('click', () => {
+      if (!eq.visual) return;
+      eq.visual.rotationOffsetDeg = 0;
+      if (rotInput) rotInput.value = '0';
+      if (rotValEl) rotValEl.textContent = '0°';
+      this.drawCharacterPreview(eq);
+      this.saveData();
+      this.updateJsonViewer();
+    });
+    document.getElementById('btn-rot-45')?.addEventListener('click', () => {
+      if (!eq.visual) return;
+      eq.visual.rotationOffsetDeg = 45;
+      if (rotInput) rotInput.value = '45';
+      if (rotValEl) rotValEl.textContent = '45°';
+      this.drawCharacterPreview(eq);
+      this.saveData();
+      this.updateJsonViewer();
+    });
+    document.getElementById('btn-rot-90')?.addEventListener('click', () => {
+      if (!eq.visual) return;
+      eq.visual.rotationOffsetDeg = 90;
+      if (rotInput) rotInput.value = '90';
+      if (rotValEl) rotValEl.textContent = '90°';
+      this.drawCharacterPreview(eq);
+      this.saveData();
+      this.updateJsonViewer();
+    });
+
+    // Scale slider
+    const scaleInput = document.getElementById('input-scale') as HTMLInputElement;
+    const scaleValEl = document.getElementById('val-scale');
+    scaleInput?.addEventListener('input', () => {
+      if (!eq.visual) return;
+      const s = Number(scaleInput.value);
+      eq.visual.scale = s;
+      if (scaleValEl) scaleValEl.textContent = `${s}x`;
+      this.drawCharacterPreview(eq);
+      this.saveData();
+      this.updateJsonViewer();
+    });
+
+    // --- Base Stats sync with Traits ---
+    if (!eq.baseStats) eq.baseStats = {};
     if (isWeapon) {
       const dmg = document.getElementById('stat-damage') as HTMLInputElement;
       dmg?.addEventListener('input', () => {
-        eq.baseStats.damage = Number(dmg.value) || 0;
+        const val = Number(dmg.value) || 0;
+        eq.baseStats!.damage = val;
+        this.syncTraitParam(eq, 'damage', 'value', val);
         this.saveData();
         this.updateJsonViewer();
       });
 
       const spd = document.getElementById('stat-speed') as HTMLInputElement;
       spd?.addEventListener('input', () => {
-        eq.baseStats.attackSpeed = Number(spd.value) || 1.0;
+        const val = Number(spd.value) || 1.0;
+        eq.baseStats!.attackSpeed = val;
+        this.syncTraitParam(eq, 'attackSpeed', 'value', val);
         this.saveData();
         this.updateJsonViewer();
       });
 
       const rng = document.getElementById('stat-range') as HTMLInputElement;
       rng?.addEventListener('input', () => {
-        eq.baseStats.range = Number(rng.value) || 100;
+        const val = Number(rng.value) || 120;
+        eq.baseStats!.range = val;
+        this.syncTraitParam(eq, 'range', 'value', val);
         this.saveData();
         this.updateJsonViewer();
       });
 
       const kb = document.getElementById('stat-knockback') as HTMLInputElement;
       kb?.addEventListener('input', () => {
-        eq.baseStats.knockback = Number(kb.value) || 100;
+        const val = Number(kb.value) || 100;
+        eq.baseStats!.knockback = val;
+        this.syncTraitParam(eq, 'knockback', 'force', val);
         this.saveData();
         this.updateJsonViewer();
       });
 
       const ps = document.getElementById('stat-projspeed') as HTMLInputElement;
       ps?.addEventListener('input', () => {
-        eq.baseStats.projectileSpeed = Number(ps.value) || 500;
+        const val = Number(ps.value) || 580;
+        eq.baseStats!.projectileSpeed = val;
+        this.syncTraitParam(eq, 'projectileSpeed', 'value', val);
         this.saveData();
         this.updateJsonViewer();
       });
     } else {
       const red = document.getElementById('stat-reduction') as HTMLInputElement;
       red?.addEventListener('input', () => {
-        eq.baseStats.damageReduction = Math.min(0.9, Math.max(0, (Number(red.value) || 0) / 100));
+        const val = Number(red.value) || 0;
+        eq.baseStats!.damageReduction = val / 100;
+        this.syncTraitParam(eq, 'damageReduction', 'value', val);
         this.saveData();
         this.updateJsonViewer();
       });
 
       const hp = document.getElementById('stat-bonushp') as HTMLInputElement;
       hp?.addEventListener('input', () => {
-        eq.baseStats.bonusHp = Number(hp.value) || 0;
+        const val = Number(hp.value) || 0;
+        eq.baseStats!.bonusHp = val;
+        this.syncTraitParam(eq, 'bonusHp', 'value', val);
         this.saveData();
         this.updateJsonViewer();
       });
 
       const kb = document.getElementById('stat-knockback') as HTMLInputElement;
       kb?.addEventListener('input', () => {
-        eq.baseStats.knockback = Number(kb.value) || 100;
+        const val = Number(kb.value) || 100;
+        eq.baseStats!.knockback = val;
+        this.syncTraitParam(eq, 'knockback', 'force', val);
         this.saveData();
         this.updateJsonViewer();
       });
@@ -1001,7 +1437,6 @@ export class WeaponEditorApp {
         const meta = TRAIT_REGISTRY[tId];
         if (!meta) return;
 
-        // initialize default params
         const defaultParams: Record<string, any> = {};
         for (const p of meta.params) {
           defaultParams[p.key] = p.defaultValue;
@@ -1058,6 +1493,23 @@ export class WeaponEditorApp {
         this.updateJsonViewer();
       });
     });
+  }
+
+  private syncTraitParam(eq: CompoundEquipment, traitId: TraitId, key: string, val: number): void {
+    if (!eq.traits) eq.traits = [];
+    const trait = eq.traits.find((t) => t.traitId === traitId);
+    if (trait) {
+      trait.params[key] = val;
+    } else {
+      const meta = TRAIT_REGISTRY[traitId];
+      if (meta) {
+        eq.traits.push({
+          traitId,
+          name: meta.name,
+          params: { [key]: val },
+        });
+      }
+    }
   }
 
   private updateJsonViewer(): void {

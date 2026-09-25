@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import {
   AttackSide,
-  KNIFE_COMBO,
   WeaponAttack,
+  WeaponComboDefinition,
+  getWeaponCombo,
 } from '../combat/WeaponCombo';
 import { RigConnectionErrors, RigPartName } from './CharacterRig';
 import { CharacterMotionPose } from './CharacterMotion';
@@ -36,6 +37,7 @@ export class PlayerCharacter {
   readonly labelText: Phaser.GameObjects.Text;
   readonly weaponContainer: Phaser.GameObjects.Container;
   readonly weaponGraphics: Phaser.GameObjects.Graphics;
+  readonly weaponSprite: Phaser.GameObjects.Image;
 
   action: PlayerAction = 'idle';
   facing: AttackSide = 'right';
@@ -68,18 +70,25 @@ export class PlayerCharacter {
       color: '#ede3ce',
     }).setOrigin(0.5);
 
-    // Procedural ink weapon container and graphics
+    // Weapon container
     this.weaponContainer = scene.add.container(14, 2);
     this.weaponGraphics = scene.add.graphics();
-    this.weaponContainer.add(this.weaponGraphics);
+    // Weapon sprite for custom uploaded rubbings
+    this.weaponSprite = scene.add.image(0, 0, '__dummy_weapon__').setVisible(false);
+    this.weaponContainer.add([this.weaponGraphics, this.weaponSprite]);
 
     this.visual.add([this.bodyCircle, this.facingDot, this.labelText, this.weaponContainer]);
-    this.refreshWeaponGraphics();
+    this.refreshWeaponVisuals();
+  }
+
+  private get currentCombo(): WeaponComboDefinition {
+    const weapon = gameState.getEquippedWeapon();
+    return getWeaponCombo(weapon.shape || '刀');
   }
 
   get canAttack(): boolean {
     if (this.action === 'attack') {
-      return this.actionElapsed >= this.attackSpec.chainAt && this.queuedAttackAngle === undefined;
+      return true; // Always allow queuing next attack in buffer during current swing
     }
     return this.action !== 'dodge' && this.action !== 'hurt' && this.action !== 'dead';
   }
@@ -94,7 +103,8 @@ export class PlayerCharacter {
   }
 
   private get attackSpec(): WeaponAttack {
-    return KNIFE_COMBO.attacks[Math.max(0, this.comboStep - 1)];
+    const attacks = this.currentCombo.attacks;
+    return attacks[Math.max(0, Math.min(this.comboStep - 1, attacks.length - 1))];
   }
 
   facePointer(horizontalOffset: number): void {
@@ -141,8 +151,9 @@ export class PlayerCharacter {
       this.queuedAttackAngle = angle;
       return true;
     }
+    const totalSteps = this.currentCombo.attacks.length;
     this.comboStep = this.scene.time.now <= this.comboExpiresAt && this.comboStep > 0
-      ? this.comboStep % KNIFE_COMBO.attacks.length + 1
+      ? (this.comboStep % totalSteps) + 1
       : 1;
     this.action = 'attack';
     this.actionElapsed = 0;
@@ -188,7 +199,9 @@ export class PlayerCharacter {
     _aimAngle: number,
   ): AttackEvent | undefined {
     const previousElapsed = this.actionElapsed;
-    this.actionElapsed += delta;
+    const weapon = gameState.getEquippedWeapon();
+    const speedMultiplier = weapon?.stats?.attackSpeed || 1.0;
+    this.actionElapsed += delta * speedMultiplier;
 
     if (this.action !== 'attack' && this.action !== 'dodge' && this.action !== 'hurt' && this.action !== 'dead') {
       this.action = movement.lengthSq() > 0.01 ? 'move' : 'idle';
@@ -200,16 +213,22 @@ export class PlayerCharacter {
         this.attackHitSent = true;
         attackEvent = { comboStep: this.comboStep, side: this.facing };
       }
-      if (this.actionElapsed >= this.attackSpec.duration) {
+
+      // Early combo chain cancel: if next attack is queued and chainAt is reached, chain immediately
+      const canChainNow = this.queuedAttackAngle !== undefined && this.actionElapsed >= this.attackSpec.chainAt;
+      const finishedFullDuration = this.actionElapsed >= this.attackSpec.duration;
+
+      if (canChainNow || finishedFullDuration) {
         if (this.queuedAttackAngle !== undefined) {
           const queuedAngle = this.queuedAttackAngle;
-          this.comboStep = this.comboStep % KNIFE_COMBO.attacks.length + 1;
+          const totalSteps = this.currentCombo.attacks.length;
+          this.comboStep = (this.comboStep % totalSteps) + 1;
           this.actionElapsed = 0;
           this.facing = Math.cos(queuedAngle) < 0 ? 'left' : 'right';
           this.attackHitSent = false;
           this.queuedAttackAngle = undefined;
         } else {
-          this.comboExpiresAt = this.scene.time.now + KNIFE_COMBO.resetWindow;
+          this.comboExpiresAt = this.scene.time.now + this.currentCombo.resetWindow;
           this.finishAction(movement);
         }
       }
@@ -234,12 +253,56 @@ export class PlayerCharacter {
     this.queuedAttackAngle = undefined;
   }
 
-  private refreshWeaponGraphics(): void {
+  private refreshWeaponVisuals(): void {
     const weapon = gameState.getEquippedWeapon();
     if (this.currentWeaponId === weapon.id) return;
     this.currentWeaponId = weapon.id;
-    this.weaponGraphics.clear();
 
+    // Check if custom uploaded image exists
+    const texKey = `weapon_rubbing_${weapon.id}`;
+    if (weapon.visual?.imageDataUrl) {
+      if (!this.scene.textures.exists(texKey)) {
+        this.scene.textures.addBase64(texKey, weapon.visual.imageDataUrl);
+        this.scene.textures.once(`addtexture-${texKey}`, () => {
+          this.applyWeaponSprite(weapon, texKey);
+        });
+      } else {
+        this.applyWeaponSprite(weapon, texKey);
+      }
+      return;
+    }
+
+    // Fall back to procedural ink graphics
+    this.weaponSprite.setVisible(false);
+    this.weaponGraphics.setVisible(true);
+    this.drawProceduralWeapon(weapon);
+  }
+
+  private applyWeaponSprite(weapon: CompoundWeapon, texKey: string): void {
+    this.weaponGraphics.clear().setVisible(false);
+    this.weaponSprite.setTexture(texKey);
+    this.weaponSprite.setVisible(true);
+
+    const grip = weapon.visual?.gripAnchor ?? { x: 0.2, y: 0.5 };
+    this.weaponSprite.setOrigin(grip.x, grip.y);
+
+    const rotOffset = weapon.visual?.rotationOffsetDeg ?? 0;
+    this.weaponSprite.setAngle(rotOffset);
+
+    const scale = weapon.visual?.scale ?? 1.0;
+    this.weaponSprite.setScale(scale);
+
+    const tip = weapon.visual?.tipAnchor ?? { x: 1.0, y: 0.5 };
+    const srcImg = this.scene.textures.get(texKey).getSourceImage();
+    const w = (srcImg as any)?.width ?? 48;
+    const h = (srcImg as any)?.height ?? 16;
+    const dx = (tip.x - grip.x) * w;
+    const dy = (tip.y - grip.y) * h;
+    this.weaponTipDist = Math.max(20, Math.hypot(dx, dy) * scale);
+  }
+
+  private drawProceduralWeapon(weapon: CompoundWeapon): void {
+    this.weaponGraphics.clear();
     const element = weapon.stats.element;
     const colors: Record<string, { body: number; edge: number; glow: number; hilt: number; tassel: number }> = {
       wood:  { body: 0x245532, edge: 0x64d982, glow: 0x82f09f, hilt: 0x483525, tassel: 0x38b860 },
@@ -250,54 +313,83 @@ export class PlayerCharacter {
       none:  { body: 0x363d38, edge: 0xb5c4b9, glow: 0xe8ede9, hilt: 0x202421, tassel: 0x8a2315 },
     };
     const c = colors[element] ?? colors.none;
+    const shape = weapon.shape || '刀';
 
-    if (weapon.words.includes('枪') || weapon.name.includes('枪')) {
-      this.weaponTipDist = 46;
+    if (shape === '枪') {
+      this.weaponTipDist = 48;
       this.weaponGraphics.fillStyle(c.hilt, 1);
-      this.weaponGraphics.fillRect(-14, -1.5, 38, 3);
+      this.weaponGraphics.fillRect(-14, -1.5, 42, 3);
       this.weaponGraphics.fillStyle(c.tassel, 0.9);
       this.weaponGraphics.beginPath();
-      this.weaponGraphics.moveTo(24, -4);
-      this.weaponGraphics.lineTo(30, 0);
-      this.weaponGraphics.lineTo(24, 4);
+      this.weaponGraphics.moveTo(28, -4);
+      this.weaponGraphics.lineTo(34, 0);
+      this.weaponGraphics.lineTo(28, 4);
       this.weaponGraphics.closePath();
       this.weaponGraphics.fillPath();
       this.weaponGraphics.fillStyle(c.body, 1);
       this.weaponGraphics.beginPath();
-      this.weaponGraphics.moveTo(24, 0);
-      this.weaponGraphics.lineTo(30, -5);
-      this.weaponGraphics.lineTo(46, 0);
-      this.weaponGraphics.lineTo(30, 5);
+      this.weaponGraphics.moveTo(28, 0);
+      this.weaponGraphics.lineTo(34, -5);
+      this.weaponGraphics.lineTo(48, 0);
+      this.weaponGraphics.lineTo(34, 5);
       this.weaponGraphics.closePath();
       this.weaponGraphics.fillPath();
       this.weaponGraphics.lineStyle(2, c.edge, 1);
       this.weaponGraphics.strokePath();
-      this.weaponGraphics.lineStyle(1.5, c.glow, 0.9);
-      this.weaponGraphics.lineBetween(26, 0, 44, 0);
-    } else if (weapon.words.includes('斧') || weapon.name.includes('斧')) {
+    } else if (shape === '剑') {
+      this.weaponTipDist = 36;
+      this.weaponGraphics.fillStyle(c.hilt, 1);
+      this.weaponGraphics.fillRect(-8, -2, 10, 4);
+      this.weaponGraphics.fillStyle(c.edge, 1);
+      this.weaponGraphics.fillRect(2, -7, 3, 14); // 护手剑格
+      this.weaponGraphics.fillStyle(c.body, 1);
+      this.weaponGraphics.beginPath();
+      this.weaponGraphics.moveTo(5, -3);
+      this.weaponGraphics.lineTo(28, -2);
+      this.weaponGraphics.lineTo(36, 0);
+      this.weaponGraphics.lineTo(28, 2);
+      this.weaponGraphics.lineTo(5, 3);
+      this.weaponGraphics.closePath();
+      this.weaponGraphics.fillPath();
+      this.weaponGraphics.lineStyle(2, c.edge, 1);
+      this.weaponGraphics.strokePath();
+      this.weaponGraphics.lineStyle(1, c.glow, 0.9);
+      this.weaponGraphics.lineBetween(6, 0, 32, 0);
+    } else if (shape === '戟') {
+      this.weaponTipDist = 46;
+      this.weaponGraphics.fillStyle(c.hilt, 1);
+      this.weaponGraphics.fillRect(-12, -2, 40, 4);
+      // 侧向月牙刃
+      this.weaponGraphics.lineStyle(2.5, c.edge, 1);
+      this.weaponGraphics.beginPath();
+      this.weaponGraphics.arc(26, -6, 8, 0, Math.PI);
+      this.weaponGraphics.strokePath();
+      // 戟尖枪头
+      this.weaponGraphics.fillStyle(c.body, 1);
+      this.weaponGraphics.beginPath();
+      this.weaponGraphics.moveTo(26, -3);
+      this.weaponGraphics.lineTo(46, 0);
+      this.weaponGraphics.lineTo(26, 3);
+      this.weaponGraphics.closePath();
+      this.weaponGraphics.fillPath();
+    } else if (shape === '斧') {
       this.weaponTipDist = 30;
       this.weaponGraphics.fillStyle(c.hilt, 1);
       this.weaponGraphics.fillRect(-10, -2, 34, 4);
       this.weaponGraphics.fillStyle(c.body, 1);
       this.weaponGraphics.beginPath();
       this.weaponGraphics.moveTo(14, -3);
-      this.weaponGraphics.lineTo(12, -15);
-      this.weaponGraphics.lineTo(24, -13);
-      this.weaponGraphics.lineTo(28, 0);
-      this.weaponGraphics.lineTo(24, 13);
-      this.weaponGraphics.lineTo(12, 15);
+      this.weaponGraphics.lineTo(12, -16);
+      this.weaponGraphics.lineTo(26, -14);
+      this.weaponGraphics.lineTo(30, 0);
+      this.weaponGraphics.lineTo(26, 14);
+      this.weaponGraphics.lineTo(12, 16);
       this.weaponGraphics.lineTo(14, 3);
       this.weaponGraphics.closePath();
       this.weaponGraphics.fillPath();
       this.weaponGraphics.lineStyle(2.5, c.edge, 1);
-      this.weaponGraphics.beginPath();
-      this.weaponGraphics.moveTo(12, -15);
-      this.weaponGraphics.lineTo(24, -13);
-      this.weaponGraphics.lineTo(28, 0);
-      this.weaponGraphics.lineTo(24, 13);
-      this.weaponGraphics.lineTo(12, 15);
       this.weaponGraphics.strokePath();
-    } else if (weapon.words.includes('弓') || weapon.name.includes('弓')) {
+    } else if (shape === '弓') {
       this.weaponTipDist = 20;
       this.weaponGraphics.lineStyle(3, c.body, 1);
       this.weaponGraphics.beginPath();
@@ -308,6 +400,7 @@ export class PlayerCharacter {
       this.weaponGraphics.lineStyle(1, c.edge, 0.9);
       this.weaponGraphics.lineBetween(6, -18, 6, 18);
     } else {
+      // 默认：刀
       this.weaponTipDist = 34;
       this.weaponGraphics.fillStyle(c.hilt, 1);
       this.weaponGraphics.fillRect(-8, -2, 10, 4);
@@ -325,10 +418,6 @@ export class PlayerCharacter {
       this.weaponGraphics.closePath();
       this.weaponGraphics.fillPath();
       this.weaponGraphics.lineStyle(2, c.edge, 1);
-      this.weaponGraphics.beginPath();
-      this.weaponGraphics.moveTo(5, -3);
-      this.weaponGraphics.lineTo(24, -3);
-      this.weaponGraphics.lineTo(34, 0);
       this.weaponGraphics.strokePath();
       this.weaponGraphics.lineStyle(1, c.glow, 0.85);
       this.weaponGraphics.lineBetween(6, 0, 26, 0);
@@ -338,7 +427,7 @@ export class PlayerCharacter {
   private updateVisuals(delta: number): void {
     if (this.action === 'dead') return;
 
-    this.refreshWeaponGraphics();
+    this.refreshWeaponVisuals();
     const facingSign = this.facing === 'left' ? -1 : 1;
     this.facingDot.setX(12 * facingSign);
     this.weaponContainer.setScale(facingSign, 1);
@@ -359,82 +448,122 @@ export class PlayerCharacter {
       this.bodyCircle.setRotation(0);
       this.bodyCircle.setFillStyle(0x243226);
     } else if (this.action === 'attack') {
-      const p = Math.min(1.0, this.actionElapsed / this.attackSpec.duration);
-      const activeP = this.attackSpec.activeAt / this.attackSpec.duration;
+      const spec = this.attackSpec;
+      const p = Math.min(1.0, this.actionElapsed / spec.duration);
+      const activeP = spec.activeAt / spec.duration;
+      const mType = spec.motionType;
 
-      if (this.comboStep === 1) {
-        // Step 1: Downward Slash (下劈)
+      if (mType === 'overhead') {
+        // 纵劈/重砸 (斧/戟)
         if (p < activeP) {
           const t = p / activeP;
           const ease = t * t;
-          this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-25, -75, ease)));
-          this.weaponContainer.setPosition(baseWeaponX - 4 * facingSign * ease, baseWeaponY - 6 * ease);
-          this.visual.setScale(0.95, 1.05);
-          this.bodyCircle.setRotation(-0.08 * facingSign * ease);
+          this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-25, -100, ease)));
+          this.weaponContainer.setPosition(baseWeaponX - 8 * facingSign * ease, baseWeaponY - 12 * ease);
+          this.visual.setScale(0.9, 1.15);
+          this.bodyCircle.setRotation(-0.12 * facingSign * ease);
         } else {
           const t = (p - activeP) / (1 - activeP);
-          const slashProgress = Math.min(1, t * 2.5);
-          if (slashProgress < 1) {
-            const rot = Phaser.Math.Linear(-75, 55, slashProgress);
-            this.weaponContainer.setRotation(Phaser.Math.DegToRad(rot));
-            this.weaponContainer.setPosition(baseWeaponX + 12 * facingSign, baseWeaponY + 4);
-            this.visual.setScale(1.18, 0.88);
-            this.bodyCircle.setRotation(0.14 * facingSign);
+          const smashP = Math.min(1, t * 2.2);
+          if (smashP < 1) {
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-100, 65, smashP)));
+            this.weaponContainer.setPosition(baseWeaponX + 16 * facingSign, baseWeaponY + 10);
+            this.visual.setScale(1.25, 0.82);
+            this.bodyCircle.setRotation(0.2 * facingSign);
           } else {
-            const recT = (slashProgress - 1) / 1.5;
-            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(55, -25, recT)));
+            const rec = (smashP - 1) / 1.2;
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(65, -25, rec)));
             this.weaponContainer.setPosition(baseWeaponX + 4 * facingSign, baseWeaponY);
             this.visual.setScale(1.0, 1.0);
             this.bodyCircle.setRotation(0);
           }
         }
-      } else if (this.comboStep === 2) {
-        // Step 2: Rising Cut (上挑)
-        if (p < activeP) {
-          const t = p / activeP;
-          const ease = t * t;
-          this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-25, 65, ease)));
-          this.weaponContainer.setPosition(baseWeaponX - 2 * facingSign, baseWeaponY + 6 * ease);
-          this.visual.setScale(1.05, 0.95);
-          this.bodyCircle.setRotation(-0.06 * facingSign * ease);
-        } else {
-          const t = (p - activeP) / (1 - activeP);
-          const slashProgress = Math.min(1, t * 2.5);
-          if (slashProgress < 1) {
-            const rot = Phaser.Math.Linear(65, -55, slashProgress);
-            this.weaponContainer.setRotation(Phaser.Math.DegToRad(rot));
-            this.weaponContainer.setPosition(baseWeaponX + 10 * facingSign, baseWeaponY - 8);
-            this.visual.setScale(0.9, 1.15);
-            this.bodyCircle.setRotation(-0.12 * facingSign);
-          } else {
-            const recT = (slashProgress - 1) / 1.5;
-            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-55, -25, recT)));
-            this.weaponContainer.setPosition(baseWeaponX + 2 * facingSign, baseWeaponY);
-            this.visual.setScale(1.0, 1.0);
-            this.bodyCircle.setRotation(0);
-          }
-        }
-      } else {
-        // Step 3: Finisher Thrust (前刺重突)
+      } else if (mType === 'thrust') {
+        // 刺击/贯穿突进 (枪/剑/刀末段)
         if (p < activeP) {
           const t = p / activeP;
           const ease = t * t;
           this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-25, 0, ease)));
-          this.weaponContainer.setPosition(baseWeaponX - 10 * facingSign * ease, baseWeaponY);
-          this.visual.setScale(0.9, 1.1);
-          this.bodyCircle.setRotation(-0.05 * facingSign * ease);
+          this.weaponContainer.setPosition(baseWeaponX - 12 * facingSign * ease, baseWeaponY);
+          this.visual.setScale(0.92, 1.08);
+          this.bodyCircle.setRotation(-0.06 * facingSign * ease);
         } else {
           const t = (p - activeP) / (1 - activeP);
-          const slashProgress = Math.min(1, t * 2.2);
-          if (slashProgress < 1) {
+          const lungeP = Math.min(1, t * 2.2);
+          if (lungeP < 1) {
             this.weaponContainer.setRotation(0);
-            this.weaponContainer.setPosition(baseWeaponX + 26 * facingSign, baseWeaponY);
-            this.visual.setScale(1.25, 0.85);
-            this.bodyCircle.setRotation(0.16 * facingSign);
+            this.weaponContainer.setPosition(baseWeaponX + 28 * facingSign, baseWeaponY);
+            this.visual.setScale(1.22, 0.88);
+            this.bodyCircle.setRotation(0.14 * facingSign);
           } else {
-            const recT = (slashProgress - 1) / 1.2;
-            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(0, -25, recT)));
-            this.weaponContainer.setPosition(baseWeaponX + 6 * facingSign, baseWeaponY);
+            const rec = (lungeP - 1) / 1.2;
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(0, -25, rec)));
+            this.weaponContainer.setPosition(baseWeaponX + 4 * facingSign, baseWeaponY);
+            this.visual.setScale(1.0, 1.0);
+            this.bodyCircle.setRotation(0);
+          }
+        }
+      } else if (mType === 'sweep') {
+        // 大回旋扫 (戟/斧/剑)
+        if (p < activeP) {
+          const t = p / activeP;
+          const ease = t * t;
+          this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-25, -90, ease)));
+          this.weaponContainer.setPosition(baseWeaponX - 6 * facingSign, baseWeaponY);
+          this.bodyCircle.setRotation(-0.15 * facingSign * ease);
+        } else {
+          const t = (p - activeP) / (1 - activeP);
+          const sweepP = Math.min(1, t * 2.0);
+          if (sweepP < 1) {
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-90, 90, sweepP)));
+            this.weaponContainer.setPosition(baseWeaponX + 18 * facingSign, baseWeaponY);
+            this.visual.setScale(1.15, 0.9);
+            this.bodyCircle.setRotation(0.18 * facingSign);
+          } else {
+            const rec = (sweepP - 1) / 1.0;
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(90, -25, rec)));
+            this.weaponContainer.setPosition(baseWeaponX + 4 * facingSign, baseWeaponY);
+            this.visual.setScale(1.0, 1.0);
+            this.bodyCircle.setRotation(0);
+          }
+        }
+      } else if (mType === 'shot') {
+        // 远程弓矢速射与蓄力
+        if (p < activeP) {
+          const t = p / activeP;
+          this.weaponContainer.setPosition(baseWeaponX - 8 * facingSign * t, baseWeaponY);
+          this.weaponContainer.setRotation(0);
+        } else {
+          const t = (p - activeP) / (1 - activeP);
+          const snap = Math.sin(t * Math.PI) * 4;
+          this.weaponContainer.setPosition(baseWeaponX + snap * facingSign, baseWeaponY);
+        }
+      } else {
+        // 默认：slash 挥砍 (刀/剑)
+        const isUpward = this.comboStep % 2 === 0;
+        const startDeg = isUpward ? 65 : -75;
+        const endDeg = isUpward ? -55 : 55;
+
+        if (p < activeP) {
+          const t = p / activeP;
+          const ease = Math.sin(t * Math.PI * 0.5);
+          this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(-25, startDeg, ease)));
+          this.weaponContainer.setPosition(baseWeaponX - 4 * facingSign * ease, baseWeaponY + (isUpward ? 6 : -6) * ease);
+          this.visual.setScale(0.95, 1.05);
+          this.bodyCircle.setRotation(-0.08 * facingSign * ease);
+        } else {
+          const t = (p - activeP) / (1 - activeP);
+          const slashProgress = Math.min(1, t * 2.8);
+          if (slashProgress < 1) {
+            const rot = Phaser.Math.Linear(startDeg, endDeg, slashProgress);
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(rot));
+            this.weaponContainer.setPosition(baseWeaponX + 12 * facingSign, baseWeaponY + (isUpward ? -4 : 4));
+            this.visual.setScale(1.18, 0.88);
+            this.bodyCircle.setRotation(0.12 * facingSign);
+          } else {
+            const recT = (slashProgress - 1) / 1.8;
+            this.weaponContainer.setRotation(Phaser.Math.DegToRad(Phaser.Math.Linear(endDeg, -25, recT)));
+            this.weaponContainer.setPosition(baseWeaponX + 4 * facingSign, baseWeaponY);
             this.visual.setScale(1.0, 1.0);
             this.bodyCircle.setRotation(0);
           }

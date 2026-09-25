@@ -1,4 +1,4 @@
-import { KNIFE_COMBO } from './WeaponCombo';
+import { getWeaponCombo, KNIFE_COMBO } from './WeaponCombo';
 import { CompoundWeapon } from '../state/GameState';
 
 export type CombatAttacker = {
@@ -32,7 +32,8 @@ export type VisualCombatEvent =
   | { type: 'fireBurst'; x: number; y: number }
   | { type: 'chainLightning'; fromX: number; fromY: number; toX: number; toY: number }
   | { type: 'earthShockwave'; x: number; y: number; radius: number }
-  | { type: 'instantKillExecute'; x: number; y: number };
+  | { type: 'instantKillExecute'; x: number; y: number }
+  | { type: 'swordBeamRelease'; x: number; y: number; range: number };
 
 export type CombatResolution = {
   hitCount: number;
@@ -61,12 +62,17 @@ export class CombatEngine {
     defenders: CombatDefender[],
     randomFn: () => number = Math.random
   ): CombatResolution {
-    const attackIndex = Math.max(0, Math.min(attacker.comboStep - 1, KNIFE_COMBO.attacks.length - 1));
-    const attackSpec = KNIFE_COMBO.attacks[attackIndex];
+    const comboDef = getWeaponCombo(weapon.shape || '刀');
+    const attackIndex = Math.max(0, Math.min(attacker.comboStep - 1, comboDef.attacks.length - 1));
+    const attackSpec = comboDef.attacks[attackIndex];
     const attackAngle = attacker.side === 'right' ? 0 : Math.PI;
 
-    const range = weapon.stats.range * (attackSpec.range / 105);
-    const comboMultiplier = attacker.comboStep === 3 ? 1.6 : attacker.comboStep === 2 ? 1.2 : 1.0;
+    // Check if weapon has swordBeam (剑气) trait
+    const swordBeamTrait = weapon.traits?.find((t) => t.traitId === 'swordBeam');
+    const extraBeamRange = swordBeamTrait ? (Number(swordBeamTrait.params?.extraRange) || 45) : 0;
+
+    const range = (weapon.stats.range + extraBeamRange) * (attackSpec.range / 105);
+    const comboMultiplier = attackSpec.damage;
     const baseDamage = Math.round(weapon.stats.damage * comboMultiplier);
     const baseKnockback = weapon.stats.knockback * (attackSpec.knockback / 14);
 
@@ -90,25 +96,29 @@ export class CombatEngine {
         hitstopRemainingMs: 0,
         cameraShake: null,
         hits: [],
-        visualEvents: [],
+        visualEvents: swordBeamTrait ? [{ type: 'swordBeamRelease', x: attacker.x, y: attacker.y, range }] : [],
         totalLifeSteal: 0,
       };
     }
 
     const hitstopRemainingMs = 40;
+    const isFinisher = attacker.comboStep >= comboDef.totalSteps;
     const cameraShake = {
-      duration: attacker.comboStep === 3 ? 90 : 45,
-      intensity: attacker.comboStep === 3 ? 0.005 : 0.002,
+      duration: isFinisher ? 90 : 45,
+      intensity: isFinisher ? 0.005 : 0.002,
     };
 
     const hits: TargetHitResult[] = [];
     const visualEvents: VisualCombatEvent[] = [];
+    if (swordBeamTrait) {
+      visualEvents.push({ type: 'swordBeamRelease', x: attacker.x, y: attacker.y, range });
+    }
     let totalLifeSteal = 0;
 
-    // Check equipped traits
+    // Check equipped traits (both direct mechanics and elemental traits)
     const instantKillTrait = weapon.traits?.find((t) => t.traitId === 'instantKill');
-    const burnTrait = weapon.traits?.find((t) => t.traitId === 'burn') || (weapon.stats.element === 'fire' ? { traitId: 'burn', name: '烈焰', params: { dps: 15, duration: 3, chance: 100 } } : undefined);
-    const stunTrait = weapon.traits?.find((t) => t.traitId === 'stun') || (weapon.stats.element === 'earth' ? { traitId: 'stun', name: '眩晕', params: { chance: 100, duration: 0.7, radius: 60 } } : undefined);
+    const burnTrait = weapon.traits?.find((t) => t.traitId === 'burn') || (weapon.stats.element === 'fire' || weapon.traits?.some((t) => t.traitId === 'fire') ? { traitId: 'burn' as const, name: '灼烧', params: { dps: 15, duration: 3, chance: 100 } } : undefined);
+    const stunTrait = weapon.traits?.find((t) => t.traitId === 'stun') || (weapon.stats.element === 'earth' || weapon.traits?.some((t) => t.traitId === 'earth') ? { traitId: 'stun' as const, name: '眩晕', params: { chance: 100, duration: 0.7, radius: 60 } } : undefined);
     const lifeStealTrait = weapon.traits?.find((t) => t.traitId === 'lifeSteal');
     const chainLightningTrait = weapon.traits?.find((t) => t.traitId === 'chainLightning');
 

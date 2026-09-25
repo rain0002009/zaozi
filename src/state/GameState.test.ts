@@ -74,6 +74,7 @@ describe('GameState Domain Module with MemoryStorageAdapter Seam', () => {
 
     // Save customized weapon
     const woodKnife = equipmentRepository.getById('木刀')!;
+    if (!woodKnife.baseStats) woodKnife.baseStats = {};
     const originalDamage = woodKnife.baseStats.damage;
     woodKnife.baseStats.damage = 88;
     equipmentRepository.saveItem(woodKnife);

@@ -196,7 +196,7 @@ const THIRD_ATTACK_POSES: AttackPoseSet = {
   },
 };
 
-const ATTACK_POSES: Record<AttackMotionName, AttackPoseSet> = {
+const ATTACK_POSES: Partial<Record<AttackMotionName, AttackPoseSet>> = {
   'knife-downward-slash': FIRST_ATTACK_POSES,
   'knife-rising-cut': SECOND_ATTACK_POSES,
   'knife-finisher-lunge': THIRD_ATTACK_POSES,
@@ -361,7 +361,7 @@ export class CharacterMotion {
   }
 
   private createAttackPose(action: CharacterMotionAction): CharacterMotionPose {
-    const poses = ATTACK_POSES[action.name];
+    const poses = ATTACK_POSES[action.name] || FIRST_ATTACK_POSES;
     const windupAt = action.activeAtMs * 0.48;
     let pose: AttackKeyPose;
     if (action.actionElapsedMs < windupAt) {

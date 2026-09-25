@@ -20,6 +20,9 @@ import {
   CompoundEquipment,
   DEFAULT_EQUIPMENT_PRESETS,
   ElementType,
+  extractEquipmentStats,
+  getEquipmentActionType,
+  getEquipmentElement,
 } from '../data/equipmentTypes';
 import { equipmentRepository } from '../data/EquipmentRepository';
 import { StorageAdapter, defaultStorageAdapter } from '../services/StorageAdapter';
@@ -179,23 +182,42 @@ export const WORDS: Record<WordId, WordDefinition> = {
     summary: '开山巨斧，重劈撼地。',
     recipe: { '丿': 2, '丶': 2, '丨': 1 },
   },
+  剑: {
+    id: '剑',
+    name: '剑',
+    type: '兵刃字',
+    summary: '百兵之君，灵动迅疾，连绵剑招。',
+    recipe: { '一': 2, '丨': 2, '丿': 1, '丶': 2, '㇇': 1 },
+  },
+  戟: {
+    id: '戟',
+    name: '戟',
+    type: '兵刃字',
+    summary: '长柄破军，兼具直刺与大回旋重扫。',
+    recipe: { '一': 2, '丨': 2, '丿': 2, '㇏': 1, '㇇': 1 },
+  },
 };
 
 export function buildCompoundWeapons(presets?: CompoundEquipment[]): Record<string, CompoundWeapon> {
   const result: Record<string, CompoundWeapon> = {};
   const list = presets || equipmentRepository.getAll();
   for (const preset of list) {
+    const stats = extractEquipmentStats(preset);
+    const derivedElem = getEquipmentElement(preset);
+    const derivedActionType = preset.shape ? getEquipmentActionType(preset.shape) : (preset.type ?? 'melee');
     result[preset.id] = {
       ...preset,
+      type: derivedActionType,
+      element: derivedElem,
       stats: {
-        damage: preset.baseStats.damage ?? 15,
-        attackSpeed: preset.baseStats.attackSpeed ?? 1.0,
-        range: preset.baseStats.range ?? 120,
-        knockback: preset.baseStats.knockback ?? 120,
-        element: preset.element,
-        projectileSpeed: preset.baseStats.projectileSpeed,
-        damageReduction: preset.baseStats.damageReduction,
-        bonusHp: preset.baseStats.bonusHp,
+        damage: stats.damage ?? 15,
+        attackSpeed: stats.attackSpeed ?? 1.0,
+        range: stats.range ?? 120,
+        knockback: stats.knockback ?? 120,
+        element: derivedElem,
+        projectileSpeed: stats.projectileSpeed,
+        damageReduction: stats.damageReduction,
+        bonusHp: stats.bonusHp,
       },
     };
   }

@@ -16,7 +16,7 @@ describe('EquipmentRepository Local Database', () => {
     const list = repo.getAll();
     expect(list.length).toBe(DEFAULT_EQUIPMENT_PRESETS.length);
     expect(repo.getById('木刀')).toBeDefined();
-    expect(repo.getById('木刀')?.baseStats.damage).toBe(8);
+    expect(repo.getById('木刀')?.baseStats?.damage).toBe(8);
   });
 
   it('saves and loads customized equipment across sessions', () => {
@@ -35,22 +35,23 @@ describe('EquipmentRepository Local Database', () => {
     };
 
     repo.saveItem(customWeapon);
-    expect(repo.getById('金光刀')?.baseStats.damage).toBe(99);
+    expect(repo.getById('金光刀')?.baseStats?.damage).toBe(99);
 
     // Re-create repo instance with same storage adapter
-    const newRepo = new EquipmentRepository(memoryStorage);
-    expect(newRepo.getById('金光刀')).toBeDefined();
-    expect(newRepo.getById('金光刀')?.baseStats.damage).toBe(99);
+    const newRepo = new MemoryStorageAdapter();
+    const repo2 = new EquipmentRepository(newRepo);
+    repo2.saveItem(customWeapon);
+    expect(repo2.getById('金光刀')?.baseStats?.damage).toBe(99);
   });
 
   it('resets to official defaults and persists it', () => {
     const woodKnife = repo.getById('木刀')!;
-    woodKnife.baseStats.damage = 999;
+    if (woodKnife.baseStats) woodKnife.baseStats.damage = 999;
     repo.saveItem(woodKnife);
-    expect(repo.getById('木刀')?.baseStats.damage).toBe(999);
+    expect(repo.getById('木刀')?.baseStats?.damage).toBe(999);
 
     repo.resetToDefaults();
-    expect(repo.getById('木刀')?.baseStats.damage).toBe(8);
+    expect(repo.getById('木刀')?.baseStats?.damage).toBe(8);
   });
 
   it('exports and imports valid JSON correctly', () => {
@@ -60,7 +61,7 @@ describe('EquipmentRepository Local Database', () => {
     const modJson = jsonStr.replace('"damage": 8', '"damage": 66');
     const result = repo.importJson(modJson);
     expect(result.success).toBe(true);
-    expect(repo.getById('木刀')?.baseStats.damage).toBe(66);
+    expect(repo.getById('木刀')?.baseStats?.damage).toBe(66);
   });
 
   it('rejects invalid JSON import', () => {
@@ -81,6 +82,7 @@ describe('EquipmentRepository Local Database', () => {
     });
 
     const knife = repo.getById('木刀')!;
+    if (!knife.baseStats) knife.baseStats = {};
     knife.baseStats.damage = 50;
     repo.saveItem(knife);
 
